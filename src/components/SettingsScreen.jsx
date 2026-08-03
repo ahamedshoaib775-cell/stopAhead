@@ -180,6 +180,32 @@ export default function SettingsScreen({ settings, onUpdateSettings, onResetSett
         </div>
       </div>
 
+      {/* Vercel & Project Info */}
+      <div className="quiet-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <svg width="22" height="19" viewBox="0 0 76 65" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" fill="#FFFFFF"/>
+          </svg>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>Vercel Production Deployment</div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>SPA routing & PWA assets configured</div>
+          </div>
+        </div>
+        <a
+          href="https://vercel.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            color: 'var(--accent)',
+            textDecoration: 'none'
+          }}
+        >
+          Vercel Hub ↗
+        </a>
+      </div>
+
       {/* Reset */}
       <button className="btn-secondary" onClick={onResetSettings} style={{ padding: '0.75rem' }}>
         <RotateCcw size={15} />
