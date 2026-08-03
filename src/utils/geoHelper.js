@@ -18,6 +18,20 @@ export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Calculates bearing angle in degrees (0-360) between two lat/lng coordinates
+ */
+export function calculateBearing(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const lat1Rad = (lat1 * Math.PI) / 180;
+  const lat2Rad = (lat2 * Math.PI) / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2Rad);
+  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return Math.round((brng + 360) % 360);
+}
+
+/**
  * Format distance in km or meters nicely
  */
 export function formatDistance(distKm) {

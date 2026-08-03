@@ -1,4 +1,4 @@
-// App.jsx - Main state management, Supabase Auth guards, DB persistence, and tracking container
+// App.jsx - Main state management, Supabase Auth guards, DB persistence, watchPosition GPS tracking, and Alarm State Machine
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -11,10 +11,10 @@ import AuthScreen from './components/AuthScreen';
 
 import { supabase } from './utils/supabaseClient';
 import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory } from './utils/dbService';
-import { calculateHaversineDistance } from './utils/geoHelper';
+import { calculateHaversineDistance, calculateBearing } from './utils/geoHelper';
 import { fetchOSRMRoute } from './utils/osmService';
-import { triggerVibration } from './utils/vibrationHelper';
-import { playSoundPreset } from './utils/audioSynthesizer';
+import { triggerVibration, stopVibration } from './utils/vibrationHelper';
+import { playSoundPreset, stopAlertLoop } from './utils/audioSynthesizer';
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -28,6 +28,10 @@ export default function App() {
   // User-Scoped Database State
   const [savedRoutes, setSavedRoutes] = useState([]);
   const [tripHistory, setTripHistory] = useState([]);
+
+  // Live Position & Heading Tracking State (watchPosition)
+  const [userPosition, setUserPosition] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
 
   // Application Settings State
   const [settings, setSettings] = useState(() => {
@@ -79,7 +83,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('stopahead_settings', JSON.stringify(settings));
 
-    // Update body theme classes
     document.body.className = '';
     if (settings.themeMode === 'light') document.body.classList.add('light-theme');
     if (settings.isHighContrast) document.body.classList.add('high-contrast');
@@ -87,16 +90,50 @@ export default function App() {
     if (settings.fontSizeScale === 'xl') document.body.classList.add('font-xl');
   }, [settings]);
 
-  // Active Trip State
+  // Live Continuous Geolocation watchPosition Hook with Heading Rotation
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    console.log('[StopAhead GPS] Subscribing to continuous navigator.geolocation.watchPosition...');
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng, heading: rawHeading } = pos.coords;
+
+        setUserPosition((prev) => {
+          let computedHeading = rawHeading;
+          if ((computedHeading == null || isNaN(computedHeading)) && prev?.lat && prev?.lng) {
+            computedHeading = calculateBearing(prev.lat, prev.lng, lat, lng);
+          }
+
+          console.log(`[StopAhead GPS] watchPosition update: Lat ${lat.toFixed(4)}, Lng ${lng.toFixed(4)}, Heading: ${computedHeading || 0}°`);
+          return {
+            lat,
+            lng,
+            heading: computedHeading || prev?.heading || 0
+          };
+        });
+      },
+      (err) => {
+        console.warn('[StopAhead GPS] watchPosition notice:', err.message);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 10000
+      }
+    );
+
+    return () => {
+      console.log('[StopAhead GPS] Clearing watchPosition listener (cleaning up memory & battery)...');
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
+  // Active Trip State & Alarm State Machine (idle -> approaching -> alarm_triggered -> dismissed -> idle)
   const [activeTrip, setActiveTrip] = useState(null);
   const [isSimulating, setIsSimulating] = useState(true);
   const [simSpeed, setSimSpeed] = useState(2);
   const [showArrivalModal, setShowArrivalModal] = useState(false);
-
-  // User Location State for Location-Aware Search
-  const [userLocation, setUserLocation] = useState(null);
-
-  const watchIdRef = useRef(null);
 
   // DB Action Handlers
   const handleSaveRoute = async (routeData) => {
@@ -124,7 +161,7 @@ export default function App() {
     setTripHistory([]);
   };
 
-  // Initialize & Start a Trip with live OpenStreetMap stop objects
+  // Initialize & Start a Trip
   const startTrip = async (originStop, destinationStop, thresholdType, thresholdValue, soundId) => {
     if (!destinationStop) {
       console.warn('[StopAhead] Cannot start trip: Destination stop is null or undefined.');
@@ -139,14 +176,13 @@ export default function App() {
     };
 
     console.log('[StopAhead] Starting trip initialization...');
-    console.log('[StopAhead] Origin stop:', origin);
-    console.log('[StopAhead] Destination stop:', destinationStop);
+    console.log('[StopAhead Alarm] State transition: idle (New Trip Initialized)');
 
     const distKm = calculateHaversineDistance(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng) || 2.5;
     const estMins = Math.max(2, Math.ceil(distKm * 2.5));
     const estimatedStops = Math.max(1, Math.ceil(distKm / 0.8));
 
-    // Construct initial trip state
+    // Construct initial trip state with explicit alarm state machine
     const initialTrip = {
       originStop: origin,
       destinationStop,
@@ -160,6 +196,8 @@ export default function App() {
       timeRemainingMins: estMins,
       distanceRemainingKm: parseFloat(distKm.toFixed(1)),
       status: 'active',
+      alarmState: 'idle', // 'idle' | 'approaching' | 'alarm_triggered' | 'dismissed'
+      hasFiredThisTrip: false,
       isApproaching: false,
       isLoadingRoute: true,
       routeError: null,
@@ -204,21 +242,7 @@ export default function App() {
     }
   };
 
-  // Launch Quick Express Demo
-  const launchQuickDemo = () => {
-    const defaultDest = {
-      id: 'demo-dest',
-      name: userLocation?.cityName ? `City Center (${userLocation.cityName})` : 'City Center Station',
-      lat: (userLocation?.lat || 13.0827) + 0.015,
-      lng: (userLocation?.lng || 80.2707) + 0.015
-    };
-
-    startTrip(null, defaultDest, 'stops', 2, settings.alertSound);
-    setSimSpeed(5);
-    playSoundPreset(settings.alertSound);
-  };
-
-  // Simulation Loop Timer
+  // Simulation Loop Timer with Alarm State Machine Engine
   useEffect(() => {
     if (!activeTrip || activeTrip.status !== 'active' || !isSimulating) return;
 
@@ -228,49 +252,42 @@ export default function App() {
       setActiveTrip((prev) => {
         if (!prev || prev.status !== 'active') return prev;
 
-        const { stopsRemaining, thresholdType, thresholdValue, soundId, isApproaching, distanceRemainingKm } = prev;
+        const { stopsRemaining, thresholdType, thresholdValue, soundId, isApproaching, distanceRemainingKm, alarmState, hasFiredThisTrip } = prev;
 
-        if (stopsRemaining <= 1) {
-          // Trip Arrived!
+        const newStopsLeft = Math.max(0, stopsRemaining - 1);
+        const newDistLeft = Math.max(0, distanceRemainingKm - 0.8);
+        const newTimeLeft = Math.max(0, Math.ceil(newDistLeft * 2.5));
+        const totalStops = prev.destinationStopIndex || 4;
+        const newProgress = Math.min(100, Math.round(((totalStops - newStopsLeft) / totalStops) * 100));
+
+        let currentAlarmState = alarmState || 'idle';
+        let currentApproaching = isApproaching;
+
+        // Check if reaching threshold
+        const isWithinThreshold =
+          (thresholdType === 'stops' && newStopsLeft <= thresholdValue) ||
+          (thresholdType === 'minutes' && newTimeLeft <= thresholdValue) ||
+          newStopsLeft <= 1;
+
+        if (isWithinThreshold && currentAlarmState === 'idle') {
+          console.log('[StopAhead Alarm] State transition: idle → approaching');
+          currentAlarmState = 'approaching';
+          currentApproaching = true;
+        }
+
+        // Trigger alarm EXACTLY ONCE if threshold crossed and not yet dismissed
+        if (isWithinThreshold && !hasFiredThisTrip && currentAlarmState !== 'dismissed' && currentAlarmState !== 'alarm_triggered') {
+          console.log('[StopAhead Alarm] State transition: approaching → alarm_triggered (Condition met)');
+          currentAlarmState = 'alarm_triggered';
           setShowArrivalModal(true);
           triggerVibration('alarm');
           playSoundPreset(soundId);
-
-          // Record in DB trip history
-          if (user?.id) {
-            recordTripHistory(user.id, prev).then(() => {
-              fetchUserTripHistory(user.id).then(setTripHistory);
-            });
-          }
-
-          return {
-            ...prev,
-            stopsRemaining: 0,
-            timeRemainingMins: 0,
-            distanceRemainingKm: 0,
-            progressPercent: 100,
-            status: 'arrived',
-            isApproaching: true
-          };
         }
 
-        const newStopsLeft = stopsRemaining - 1;
-        const newDistLeft = Math.max(0, distanceRemainingKm - 0.8);
-        const newTimeLeft = Math.max(1, Math.ceil(newDistLeft * 2.5));
-        const totalStops = prev.destinationStopIndex || 4;
-        const newProgress = Math.min(95, Math.round(((totalStops - newStopsLeft) / totalStops) * 100));
-
-        // Check if approaching threshold
-        let approachingNow = isApproaching;
-        if (thresholdType === 'stops' && newStopsLeft <= thresholdValue) {
-          approachingNow = true;
-        } else if (thresholdType === 'minutes' && newTimeLeft <= thresholdValue) {
-          approachingNow = true;
-        }
-
-        if (approachingNow && !isApproaching) {
-          triggerVibration('proximity');
-          playSoundPreset(soundId);
+        if (newStopsLeft === 0 && user?.id) {
+          recordTripHistory(user.id, prev).then(() => {
+            fetchUserTripHistory(user.id).then(setTripHistory);
+          });
         }
 
         return {
@@ -279,13 +296,30 @@ export default function App() {
           timeRemainingMins: newTimeLeft,
           distanceRemainingKm: parseFloat(newDistLeft.toFixed(1)),
           progressPercent: newProgress,
-          isApproaching: approachingNow
+          alarmState: currentAlarmState,
+          isApproaching: currentApproaching,
+          status: newStopsLeft === 0 ? 'arrived' : 'active'
         };
       });
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [activeTrip?.status, isSimulating, simSpeed, user?.id]);
+  }, [activeTrip?.status, activeTrip?.alarmState, isSimulating, simSpeed, user?.id]);
+
+  // Handle Manual Dismiss Alarm Action (Immediate Kill Switch)
+  const handleDismissAlarm = () => {
+    console.log('[StopAhead Alarm] State transition: alarm_triggered → dismissed');
+    stopAlertLoop();
+    stopVibration();
+    setShowArrivalModal(false);
+
+    setActiveTrip((prev) => prev ? ({
+      ...prev,
+      alarmState: 'dismissed',
+      hasFiredThisTrip: true,
+      isApproaching: false
+    }) : null);
+  };
 
   // Handle Manual Simulator Actions
   const handleAdvanceStop = () => {
@@ -297,11 +331,13 @@ export default function App() {
   };
 
   const handleJumpToThreshold = () => {
+    console.log('[StopAhead Alarm] Jump to threshold triggered.');
     setActiveTrip((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
         stopsRemaining: prev.thresholdValue,
+        alarmState: 'approaching',
         isApproaching: true
       };
     });
@@ -310,9 +346,16 @@ export default function App() {
   };
 
   const handleTriggerArrival = () => {
+    console.log('[StopAhead Alarm] Manual arrival triggered.');
+    console.log('[StopAhead Alarm] State transition: approaching → alarm_triggered (Manual Test)');
     setShowArrivalModal(true);
     triggerVibration('alarm');
     playSoundPreset(settings.alertSound);
+
+    setActiveTrip((prev) => prev ? ({
+      ...prev,
+      alarmState: 'alarm_triggered'
+    }) : null);
 
     if (user?.id && activeTrip) {
       recordTripHistory(user.id, activeTrip).then(() => {
@@ -322,12 +365,15 @@ export default function App() {
   };
 
   const handleSnoozeTrip = (extraStops = 2) => {
-    setShowArrivalModal(false);
+    console.log('[StopAhead Alarm] Snoozing alarm (+2 stops)...');
+    handleDismissAlarm();
     setActiveTrip((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
         status: 'active',
+        alarmState: 'idle',
+        hasFiredThisTrip: false,
         stopsRemaining: prev.stopsRemaining + extraStops,
         isApproaching: false
       };
@@ -336,6 +382,10 @@ export default function App() {
   };
 
   const handleEndTrip = () => {
+    console.log('[StopAhead Alarm] State transition: dismissed → idle (Trip Ended)');
+    stopAlertLoop();
+    stopVibration();
+
     if (user?.id && activeTrip) {
       recordTripHistory(user.id, activeTrip).then(() => {
         fetchUserTripHistory(user.id).then(setTripHistory);
@@ -439,6 +489,7 @@ export default function App() {
             activeTrip={activeTrip}
             isSimulating={isSimulating}
             simSpeed={simSpeed}
+            userPosition={userPosition}
             gpsMode={settings.gpsMode}
             onToggleSim={() => setIsSimulating(!isSimulating)}
             onChangeSimSpeed={setSimSpeed}
@@ -447,6 +498,7 @@ export default function App() {
             onTriggerArrival={handleTriggerArrival}
             onSnoozeTrip={handleSnoozeTrip}
             onEndTrip={handleEndTrip}
+            onDismissAlarm={handleDismissAlarm}
             onNavigate={setActiveTab}
           />
         )}

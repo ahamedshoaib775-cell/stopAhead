@@ -39,9 +39,17 @@ export default function ArrivalAlertModal({
   if (!activeTrip) return null;
 
   const handleDismiss = () => {
+    console.log('[StopAhead Alarm] State transition: alarm_triggered → dismissed');
     stopAlertLoop();
     stopVibration();
-    onGettingOff();
+    if (onGettingOff) onGettingOff();
+  };
+
+  const handleSnoozeAction = (extraStops) => {
+    console.log('[StopAhead Alarm] State transition: alarm_triggered → dismissed (Snoozed)');
+    stopAlertLoop();
+    stopVibration();
+    if (onSnooze) onSnooze(extraStops);
   };
 
   return (
@@ -57,11 +65,11 @@ export default function ArrivalAlertModal({
         </h1>
 
         <div className="arrival-stop-name">
-          {activeTrip.destinationStop.name}
+          {activeTrip.destinationStop?.name || 'Destination'}
         </div>
 
         <p style={{ fontSize: '1rem', marginTop: '0.8rem', opacity: 0.85, fontWeight: 500 }}>
-          Get ready to exit on {activeTrip.route.shortName}.
+          Get ready to exit your vehicle now.
         </p>
       </div>
 
@@ -93,7 +101,7 @@ export default function ArrivalAlertModal({
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
           <button
-            onClick={() => { stopAlertLoop(); onSnooze(2); }}
+            onClick={() => handleSnoozeAction(2)}
             style={{
               padding: '0.8rem',
               background: 'rgba(4, 9, 20, 0.15)',
@@ -114,12 +122,12 @@ export default function ArrivalAlertModal({
           </button>
 
           <button
-            onClick={() => { stopAlertLoop(); onExtendMinutes(5); }}
+            onClick={handleDismiss}
             style={{
               padding: '0.8rem',
-              background: 'rgba(4, 9, 20, 0.15)',
-              border: '1px solid rgba(4, 9, 20, 0.3)',
-              color: '#040914',
+              background: 'rgba(255, 82, 82, 0.2)',
+              border: '1px solid rgba(255, 82, 82, 0.5)',
+              color: '#ff5252',
               fontWeight: 700,
               fontSize: '0.82rem',
               borderRadius: 'var(--radius-md)',
@@ -129,9 +137,10 @@ export default function ArrivalAlertModal({
               justifyContent: 'center',
               gap: '0.4rem'
             }}
+            id="btn-silence-alarm-fallback"
           >
             <Clock size={15} />
-            <span>Extend (+5 Mins)</span>
+            <span>Silence & Dismiss</span>
           </button>
         </div>
       </div>

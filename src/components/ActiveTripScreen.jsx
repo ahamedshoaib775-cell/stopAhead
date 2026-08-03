@@ -8,6 +8,7 @@ export default function ActiveTripScreen({
   activeTrip,
   isSimulating,
   simSpeed,
+  userPosition,
   onToggleSim,
   onChangeSimSpeed,
   onAdvanceStop,
@@ -15,6 +16,7 @@ export default function ActiveTripScreen({
   onTriggerArrival,
   onSnoozeTrip,
   onEndTrip,
+  onDismissAlarm,
   onNavigate
 }) {
   // Console logging for active trip render state
@@ -61,7 +63,11 @@ export default function ActiveTripScreen({
 
   const originCoords = [originLat, originLng];
   const destCoords = [destinationStop.lat, destinationStop.lng];
-  const currentCoords = [originLat, originLng];
+
+  const currentLat = userPosition?.lat || originLat;
+  const currentLng = userPosition?.lng || originLng;
+  const currentCoords = [currentLat, currentLng];
+  const activeHeading = userPosition?.heading || 0;
 
   // Route stops for Leaflet Map
   const mapStops = route?.stops && route.stops.length > 0
@@ -75,16 +81,37 @@ export default function ActiveTripScreen({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       {/* Approaching Alert Banner */}
       {isApproaching && (
-        <div className="proximity-banner">
-          <AlertCircle size={22} color="var(--accent)" />
-          <div>
-            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--accent)' }}>
-              Approaching Your Destination
-            </div>
-            <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              {stopsRemaining} {stopsRemaining === 1 ? 'stop' : 'stops'} away from {destinationStop.name}.
+        <div className="proximity-banner" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <AlertCircle size={22} color="var(--accent)" />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--accent)' }}>
+                Approaching Your Destination
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                {stopsRemaining} {stopsRemaining === 1 ? 'stop' : 'stops'} away from {destinationStop.name}.
+              </div>
             </div>
           </div>
+          {onDismissAlarm && (
+            <button
+              type="button"
+              onClick={onDismissAlarm}
+              style={{
+                padding: '0.45rem 0.75rem',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(255, 82, 82, 0.2)',
+                border: '1px solid rgba(255, 82, 82, 0.5)',
+                color: '#ff5252',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                cursor: 'pointer'
+              }}
+              id="btn-manual-stop-alarm"
+            >
+              Stop Alarm
+            </button>
+          )}
         </div>
       )}
 
@@ -176,6 +203,7 @@ export default function ActiveTripScreen({
           originCoords={originCoords}
           destCoords={destCoords}
           currentCoords={currentCoords}
+          heading={activeHeading}
           stops={mapStops}
           height="190px"
         />

@@ -1,25 +1,44 @@
-// LeafletMap.jsx - Interactive OpenStreetMap rendering via Leaflet.js (100% Free)
+// LeafletMap.jsx - Interactive OpenStreetMap rendering via Leaflet.js with live directional heading rotation
 import React, { useEffect, useRef } from 'react';
 
 export default function LeafletMap({
   originCoords,
   destCoords,
   currentCoords,
+  heading = 0,
   stops = [],
   height = '180px'
 }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const userMarkerRef = useRef(null);
   const markersRef = useRef([]);
   const polylineRef = useRef(null);
+
+  // Helper to construct directional SVG arrow icon rotated by heading degrees
+  const createArrowIcon = (deg = 0) => {
+    if (!window.L) return null;
+    return window.L.divIcon({
+      className: 'user-navigation-arrow-marker',
+      html: `
+        <div style="transform: rotate(${deg}deg); transition: transform 0.3s ease; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0px 2px 6px rgba(0,229,255,0.6));">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="11" fill="rgba(0, 229, 255, 0.25)" stroke="#00E5FF" stroke-width="1.5"/>
+            <path d="M12 2L18 19L12 15L6 19L12 2Z" fill="#00E5FF" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [34, 34],
+      iconAnchor: [17, 17]
+    });
+  };
 
   useEffect(() => {
     if (!mapContainerRef.current || !window.L) return;
 
-    // Determine active center strictly from props without hardcoded fallback cities
     const targetCenter = currentCoords || originCoords || (stops && stops.length > 0 && stops[0].lat && stops[0].lng ? [stops[0].lat, stops[0].lng] : null);
 
-    // Initialize Leaflet Map
+    // Initialize Leaflet Map instance
     if (!mapInstanceRef.current && targetCenter) {
       const map = window.L.map(mapContainerRef.current, {
         center: targetCenter,
@@ -28,28 +47,29 @@ export default function LeafletMap({
         attributionControl: false
       });
 
-      // Add OpenStreetMap Free Tile Layer
       window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19
       }).addTo(map);
 
       mapInstanceRef.current = map;
     } else if (mapInstanceRef.current && targetCenter) {
-      mapInstanceRef.current.setView(targetCenter, mapInstanceRef.current.getZoom() || 14);
+      mapInstanceRef.current.panTo(targetCenter, { animate: true, duration: 0.5 });
     }
 
     const map = mapInstanceRef.current;
+    if (!map) return;
 
-    // Clear existing markers and lines
+    // Clear existing static stop markers and polyline
     markersRef.current.forEach((m) => map.removeLayer(m));
     markersRef.current = [];
+
     if (polylineRef.current) {
       map.removeLayer(polylineRef.current);
     }
 
     const latLngs = [];
 
-    // Add Stop Markers
+    // Render Stop Markers
     if (stops && stops.length > 0) {
       stops.forEach((stop, idx) => {
         if (!stop.lat || !stop.lng) return;
@@ -71,22 +91,22 @@ export default function LeafletMap({
       });
     }
 
-    // Add Live User Position Marker
+    // Smoothly update or add live User Directional Marker
     if (currentCoords) {
-      const userMarker = window.L.circleMarker(currentCoords, {
-        radius: 10,
-        fillColor: '#00E5FF',
-        color: '#ffffff',
-        weight: 3,
-        opacity: 1,
-        fillOpacity: 1
-      }).addTo(map);
-
-      userMarker.bindTooltip('Current Position', { permanent: true, direction: 'bottom' });
-      markersRef.current.push(userMarker);
+      const arrowIcon = createArrowIcon(heading);
+      if (!userMarkerRef.current) {
+        const marker = window.L.marker(currentCoords, { icon: arrowIcon }).addTo(map);
+        marker.bindTooltip('Current Position', { permanent: false, direction: 'bottom' });
+        userMarkerRef.current = marker;
+      } else {
+        userMarkerRef.current.setLatLng(currentCoords);
+        if (arrowIcon) {
+          userMarkerRef.current.setIcon(arrowIcon);
+        }
+      }
     }
 
-    // Draw Route Polyline
+    // Render Route Line
     if (latLngs.length > 1) {
       polylineRef.current = window.L.polyline(latLngs, {
         color: '#00E5FF',
@@ -94,10 +114,8 @@ export default function LeafletMap({
         opacity: 0.8,
         dashArray: '6, 8'
       }).addTo(map);
-
-      map.fitBounds(polylineRef.current.getBounds(), { padding: [20, 20] });
     }
-  }, [originCoords, destCoords, currentCoords, stops]);
+  }, [originCoords, destCoords, currentCoords, heading, stops]);
 
   return (
     <div
