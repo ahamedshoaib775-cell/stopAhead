@@ -298,21 +298,26 @@ export default function App() {
         let currentAlarmState = alarmState || 'idle';
         let currentApproaching = isApproaching;
 
-        // Check if reaching threshold
+        // Check if reaching threshold strictly (e.g. 2 stops before destination)
+        // Guard: Must have departed origin (newProgress >= 20% or newStopsLeft < totalStops) to avoid immediate alert at start
+        const hasDepartedOrigin = newProgress >= 20 || newStopsLeft < totalStops;
+
         const isWithinThreshold =
-          (thresholdType === 'stops' && newStopsLeft <= thresholdValue) ||
-          (thresholdType === 'minutes' && newTimeLeft <= thresholdValue) ||
-          newStopsLeft <= 1;
+          hasDepartedOrigin &&
+          (
+            (thresholdType === 'stops' && newStopsLeft <= thresholdValue) ||
+            (thresholdType === 'minutes' && newTimeLeft <= thresholdValue)
+          );
 
         if (isWithinThreshold && currentAlarmState === 'idle') {
-          console.log('[StopAhead Alarm] State transition: idle → approaching');
+          console.log(`[StopAhead Alarm] State transition: idle → approaching (${newStopsLeft} stops left <= ${thresholdValue} threshold)`);
           currentAlarmState = 'approaching';
           currentApproaching = true;
         }
 
         // Trigger alarm EXACTLY ONCE if threshold crossed and not yet dismissed
         if (isWithinThreshold && !hasFiredThisTrip && currentAlarmState !== 'dismissed' && currentAlarmState !== 'alarm_triggered') {
-          console.log('[StopAhead Alarm] State transition: approaching → alarm_triggered (Condition met)');
+          console.log(`[StopAhead Alarm] State transition: approaching → alarm_triggered (Condition met: ${newStopsLeft} stops left <= ${thresholdValue} threshold)`);
           currentAlarmState = 'alarm_triggered';
           setShowArrivalModal(true);
           triggerVibration('alarm');
