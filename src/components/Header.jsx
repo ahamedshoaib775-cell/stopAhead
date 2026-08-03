@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin } from 'lucide-react';
 
-export default function Header({ onNavigate, gpsMode }) {
+export default function Header({ onNavigate, user }) {
   const [currentTime, setCurrentTime] = useState('');
 
   useEffect(() => {
@@ -15,6 +15,8 @@ export default function Header({ onNavigate, gpsMode }) {
     return () => clearInterval(interval);
   }, []);
 
+  const initial = user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0) || 'U';
+
   return (
     <header className="app-header">
       <div
@@ -26,8 +28,33 @@ export default function Header({ onNavigate, gpsMode }) {
         <span className="logo-wordmark-text">StopAhead</span>
       </div>
 
-      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-        {currentTime}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          {currentTime}
+        </span>
+
+        {user && (
+          <div
+            onClick={() => onNavigate('settings')}
+            style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '50%',
+              background: 'var(--accent)',
+              color: '#000',
+              fontWeight: 800,
+              fontSize: '0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer'
+            }}
+            title={user.email}
+            id="user-profile-badge"
+          >
+            {initial.toUpperCase()}
+          </div>
+        )}
       </div>
     </header>
   );

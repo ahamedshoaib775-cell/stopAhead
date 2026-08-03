@@ -1,6 +1,6 @@
 // SetDestinationScreen.jsx - Real Live OpenStreetMap (Overpass + Nominatim + Leaflet) Destination Flow
 import React, { useState, useEffect } from 'react';
-import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle } from 'lucide-react';
+import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, Bookmark } from 'lucide-react';
 import { searchNominatimPlaces, fetchOverpassNearbyStops } from '../utils/osmService';
 import { requestBrowserLocation } from '../utils/locationService';
 import LeafletMap from './LeafletMap';
@@ -13,7 +13,8 @@ export default function SetDestinationScreen({
   onNavigate,
   defaultSettings,
   userLocation,
-  onUpdateUserLocation
+  onUpdateUserLocation,
+  onSaveRoute
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [osmSearchResults, setOsmSearchResults] = useState([]);
@@ -454,17 +455,54 @@ export default function SetDestinationScreen({
       {/* Selected Destination Details */}
       {selectedDestinationStop && (
         <div className="quiet-card active-accent">
-          <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.3rem' }}>
-            Selected Destination Stop
-          </div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-            {selectedDestinationStop.name}
-          </div>
-          {selectedDestinationStop.description && (
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              {selectedDestinationStop.description}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                Selected Destination Stop
+              </div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                {selectedDestinationStop.name}
+              </div>
+              {selectedDestinationStop.description && (
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  {selectedDestinationStop.description}
+                </div>
+              )}
             </div>
-          )}
+
+            {onSaveRoute && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSaveRoute({
+                    title: selectedDestinationStop.name,
+                    destinationName: selectedDestinationStop.name,
+                    destinationStop: selectedDestinationStop,
+                    originStop: selectedOriginStop,
+                    thresholdType,
+                    thresholdValue
+                  });
+                }}
+                style={{
+                  padding: '0.4rem 0.75rem',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(0, 229, 255, 0.15)',
+                  border: '1px solid var(--accent)',
+                  color: 'var(--accent)',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}
+                id="btn-save-favorite-route"
+              >
+                <Bookmark size={13} />
+                <span>Save Route</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 

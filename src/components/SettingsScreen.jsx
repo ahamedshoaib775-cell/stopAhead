@@ -1,19 +1,13 @@
-// SettingsScreen.jsx - Quiet, minimal settings screen
-import React from 'react';
-import { Bell, Sliders, Eye, Radio, RotateCcw, Volume2, Smartphone } from 'lucide-react';
+import { Bell, Eye, Radio, RotateCcw, Volume2, LogOut, UserCheck } from 'lucide-react';
 import { SOUND_PRESETS, playSoundPreset } from '../utils/audioSynthesizer';
 import { triggerVibration } from '../utils/vibrationHelper';
 
-export default function SettingsScreen({ settings, onUpdateSettings, onResetSettings }) {
+export default function SettingsScreen({ settings, onUpdateSettings, onResetSettings, user, onSignOut }) {
   const {
     alertStyle,
     alertSound,
-    defaultThresholdType,
-    defaultThresholdValue,
     themeMode,
-    isHighContrast,
-    fontSizeScale,
-    gpsMode
+    isHighContrast
   } = settings;
 
   const handleTestSound = (soundId) => {
@@ -21,14 +15,65 @@ export default function SettingsScreen({ settings, onUpdateSettings, onResetSett
     triggerVibration('tap');
   };
 
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'StopAhead User';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       <div>
         <h2 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Settings</h2>
         <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
-          Configure alerts, sounds, theme, and accessibility.
+          Manage your account profile, alerts, theme, and audio presets.
         </p>
       </div>
+
+      {/* Account Profile Card */}
+      {user && (
+        <div className="quiet-card" style={{ border: '1px solid rgba(0, 229, 255, 0.25)', background: 'rgba(0, 229, 255, 0.05)' }}>
+          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' }}>
+            Account Profile
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div
+                style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '50%',
+                  background: 'var(--accent)',
+                  color: '#000',
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.1rem'
+                }}
+              >
+                {userName.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '0.98rem', color: 'var(--text-primary)' }}>
+                  {userName}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  {user.email}
+                </div>
+              </div>
+            </div>
+            <UserCheck size={18} color="var(--accent)" />
+          </div>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onSignOut}
+            style={{ width: '100%', borderColor: 'rgba(255, 82, 82, 0.4)', color: '#ff5252' }}
+            id="btn-sign-out"
+          >
+            <LogOut size={16} />
+            <span>Log Out</span>
+          </button>
+        </div>
+      )}
 
       {/* Alert Style */}
       <div className="quiet-card">

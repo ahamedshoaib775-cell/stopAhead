@@ -1,4 +1,4 @@
-// App.jsx - Main state management, navigation, GPS simulation engine & StopAhead application container
+// App.jsx - Main state management, Supabase Auth guards, DB persistence, and tracking container
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -7,14 +7,27 @@ import SetDestinationScreen from './components/SetDestinationScreen';
 import ActiveTripScreen from './components/ActiveTripScreen';
 import ArrivalAlertModal from './components/ArrivalAlertModal';
 import SettingsScreen from './components/SettingsScreen';
+import AuthScreen from './components/AuthScreen';
 
+import { supabase } from './utils/supabaseClient';
+import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory } from './utils/dbService';
 import { calculateHaversineDistance } from './utils/geoHelper';
 import { fetchOSRMRoute } from './utils/osmService';
 import { triggerVibration } from './utils/vibrationHelper';
 import { playSoundPreset } from './utils/audioSynthesizer';
+import { Loader2 } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
+
+  // Supabase Authentication State
+  const [user, setUser] = useState(null);
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // User-Scoped Database State
+  const [savedRoutes, setSavedRoutes] = useState([]);
+  const [tripHistory, setTripHistory] = useState([]);
 
   // Application Settings State
   const [settings, setSettings] = useState(() => {
@@ -34,6 +47,34 @@ export default function App() {
     };
   });
 
+  // Check initial Supabase Auth session & listen to state changes
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Fetch DB data whenever logged-in user changes (Strict User Isolation)
+  useEffect(() => {
+    if (user?.id) {
+      fetchUserSavedRoutes(user.id).then(setSavedRoutes);
+      fetchUserTripHistory(user.id).then(setTripHistory);
+    } else {
+      setSavedRoutes([]);
+      setTripHistory([]);
+    }
+  }, [user?.id]);
+
   // Save settings to LocalStorage
   useEffect(() => {
     localStorage.setItem('stopahead_settings', JSON.stringify(settings));
@@ -49,13 +90,39 @@ export default function App() {
   // Active Trip State
   const [activeTrip, setActiveTrip] = useState(null);
   const [isSimulating, setIsSimulating] = useState(true);
-  const [simSpeed, setSimSpeed] = useState(2); // 1x, 2x, 5x, 10x
+  const [simSpeed, setSimSpeed] = useState(2);
   const [showArrivalModal, setShowArrivalModal] = useState(false);
 
   // User Location State for Location-Aware Search
   const [userLocation, setUserLocation] = useState(null);
 
   const watchIdRef = useRef(null);
+
+  // DB Action Handlers
+  const handleSaveRoute = async (routeData) => {
+    if (!user?.id) return;
+    const saved = await saveUserRoute(user.id, routeData);
+    if (saved) {
+      const updated = await fetchUserSavedRoutes(user.id);
+      setSavedRoutes(updated);
+    }
+  };
+
+  const handleDeleteSavedRoute = async (routeId) => {
+    if (!user?.id) return;
+    await deleteUserRoute(user.id, routeId);
+    const updated = await fetchUserSavedRoutes(user.id);
+    setSavedRoutes(updated);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setActiveTrip(null);
+    setSavedRoutes([]);
+    setTripHistory([]);
+  };
 
   // Initialize & Start a Trip with live OpenStreetMap stop objects
   const startTrip = async (originStop, destinationStop, thresholdType, thresholdValue, soundId) => {
@@ -79,7 +146,7 @@ export default function App() {
     const estMins = Math.max(2, Math.ceil(distKm * 2.5));
     const estimatedStops = Math.max(1, Math.ceil(distKm / 0.8));
 
-    // Construct initial trip state with route object and stops array
+    // Construct initial trip state
     const initialTrip = {
       originStop: origin,
       destinationStop,
@@ -110,11 +177,8 @@ export default function App() {
     triggerVibration('tap');
 
     // Fetch live OSRM polyline & routing details asynchronously
-    console.log(`[StopAhead] Fetching live OSRM route between [${origin.lat}, ${origin.lng}] and [${destinationStop.lat}, ${destinationStop.lng}]...`);
     try {
       const osrmResult = await fetchOSRMRoute(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng);
-      console.log('[StopAhead] Live OSRM route data returned:', osrmResult);
-
       if (osrmResult && osrmResult.success) {
         setActiveTrip((prev) => prev ? ({
           ...prev,
@@ -156,196 +220,136 @@ export default function App() {
 
   // Simulation Loop Timer
   useEffect(() => {
-    if (!activeTrip || activeTrip.status !== 'active' || !isSimulating || settings.gpsMode === 'real') {
-      return;
-    }
+    if (!activeTrip || activeTrip.status !== 'active' || !isSimulating) return;
 
-    const interval = setInterval(() => {
+    const intervalMs = Math.max(500, 3000 / simSpeed);
+
+    const timer = setInterval(() => {
       setActiveTrip((prev) => {
         if (!prev || prev.status !== 'active') return prev;
 
-        const { originStopIndex, destinationStopIndex, route, thresholdType, thresholdValue } = prev;
+        const { stopsRemaining, thresholdType, thresholdValue, soundId, isApproaching, distanceRemainingKm } = prev;
 
-        let newProgress = prev.progressPercent + 0.8 * simSpeed;
-        if (newProgress >= 100) {
-          // Arrived at destination!
+        if (stopsRemaining <= 1) {
+          // Trip Arrived!
           setShowArrivalModal(true);
+          triggerVibration('alarm');
+          playSoundPreset(soundId);
+
+          // Record in DB trip history
+          if (user?.id) {
+            recordTripHistory(user.id, prev).then(() => {
+              fetchUserTripHistory(user.id).then(setTripHistory);
+            });
+          }
+
           return {
             ...prev,
-            progressPercent: 100,
-            currentStopIndex: destinationStopIndex,
             stopsRemaining: 0,
             timeRemainingMins: 0,
             distanceRemainingKm: 0,
+            progressPercent: 100,
             status: 'arrived',
             isApproaching: true
           };
         }
 
-        // Calculate current stop index based on progress
-        const totalStops = destinationStopIndex - originStopIndex;
-        const stopProgress = (newProgress / 100) * totalStops;
-        const currentIdx = Math.min(destinationStopIndex, originStopIndex + Math.floor(stopProgress));
+        const newStopsLeft = stopsRemaining - 1;
+        const newDistLeft = Math.max(0, distanceRemainingKm - 0.8);
+        const newTimeLeft = Math.max(1, Math.ceil(newDistLeft * 2.5));
+        const totalStops = prev.destinationStopIndex || 4;
+        const newProgress = Math.min(95, Math.round(((totalStops - newStopsLeft) / totalStops) * 100));
 
-        const stopsLeft = Math.max(0, destinationStopIndex - currentIdx);
-        const minsLeft = Math.max(0, ((100 - newProgress) / 100) * (totalStops * 3));
-        const distLeft = Math.max(0, stopsLeft * 1.5 * ((100 - newProgress) / 100));
+        // Check if approaching threshold
+        let approachingNow = isApproaching;
+        if (thresholdType === 'stops' && newStopsLeft <= thresholdValue) {
+          approachingNow = true;
+        } else if (thresholdType === 'minutes' && newTimeLeft <= thresholdValue) {
+          approachingNow = true;
+        }
 
-        // Check if threshold reached
-        const isApproachingNow =
-          thresholdType === 'stops'
-            ? stopsLeft <= thresholdValue
-            : minsLeft <= thresholdValue;
-
-        // Trigger subtle proximity vibration if newly approaching
-        if (isApproachingNow && !prev.isApproaching) {
+        if (approachingNow && !isApproaching) {
           triggerVibration('proximity');
+          playSoundPreset(soundId);
         }
 
         return {
           ...prev,
+          stopsRemaining: newStopsLeft,
+          timeRemainingMins: newTimeLeft,
+          distanceRemainingKm: parseFloat(newDistLeft.toFixed(1)),
           progressPercent: newProgress,
-          currentStopIndex: currentIdx,
-          stopsRemaining: stopsLeft,
-          timeRemainingMins: minsLeft,
-          distanceRemainingKm: distLeft,
-          isApproaching: isApproachingNow
+          isApproaching: approachingNow
         };
       });
-    }, 400);
+    }, intervalMs);
 
-    return () => clearInterval(interval);
-  }, [activeTrip, isSimulating, simSpeed, settings.gpsMode]);
+    return () => clearInterval(timer);
+  }, [activeTrip?.status, isSimulating, simSpeed, user?.id]);
 
-  // Real Geolocation Mode Handling
-  useEffect(() => {
-    if (settings.gpsMode === 'real' && activeTrip && activeTrip.status === 'active') {
-      if ('geolocation' in navigator) {
-        watchIdRef.current = navigator.geolocation.watchPosition(
-          (pos) => {
-            const { latitude, longitude } = pos.coords;
-            const destStop = activeTrip.destinationStop;
-            const distKm = calculateHaversineDistance(latitude, longitude, destStop.lat, destStop.lng);
-
-            setActiveTrip((prev) => {
-              if (!prev) return null;
-              const minsLeft = (distKm / 35) * 60; // 35km/h avg speed
-              const stopsLeft = Math.ceil(distKm / 1.5);
-              const isApproachingNow =
-                prev.thresholdType === 'stops'
-                  ? stopsLeft <= prev.thresholdValue
-                  : minsLeft <= prev.thresholdValue;
-
-              if (distKm <= 0.15) {
-                setShowArrivalModal(true);
-                return { ...prev, status: 'arrived', distanceRemainingKm: 0, stopsRemaining: 0, timeRemainingMins: 0 };
-              }
-
-              return {
-                ...prev,
-                distanceRemainingKm: distKm,
-                stopsRemaining: stopsLeft,
-                timeRemainingMins: minsLeft,
-                isApproaching: isApproachingNow
-              };
-            });
-          },
-          (err) => console.warn('Geolocation error:', err),
-          { enableHighAccuracy: true }
-        );
-      }
-    } else {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
-    }
-
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
-    };
-  }, [settings.gpsMode, activeTrip]);
-
-  // Fast action simulation jumpers
+  // Handle Manual Simulator Actions
   const handleAdvanceStop = () => {
-    if (!activeTrip) return;
     setActiveTrip((prev) => {
-      const nextIdx = Math.min(prev.destinationStopIndex, prev.currentStopIndex + 1);
-      const stopsLeft = prev.destinationStopIndex - nextIdx;
-      const progress = Math.min(100, prev.progressPercent + 25);
-      return {
-        ...prev,
-        currentStopIndex: nextIdx,
-        stopsRemaining: stopsLeft,
-        progressPercent: progress,
-        isApproaching: stopsLeft <= prev.thresholdValue
-      };
+      if (!prev || prev.stopsRemaining <= 0) return prev;
+      const newLeft = Math.max(0, prev.stopsRemaining - 1);
+      return { ...prev, stopsRemaining: newLeft };
     });
   };
 
   const handleJumpToThreshold = () => {
-    if (!activeTrip) return;
-    setActiveTrip((prev) => ({
-      ...prev,
-      progressPercent: 70,
-      stopsRemaining: prev.thresholdValue,
-      timeRemainingMins: prev.thresholdValue * 1.5,
-      isApproaching: true
-    }));
+    setActiveTrip((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        stopsRemaining: prev.thresholdValue,
+        isApproaching: true
+      };
+    });
     triggerVibration('proximity');
-    playSoundPreset(activeTrip.soundId || settings.alertSound);
+    playSoundPreset(settings.alertSound);
   };
 
   const handleTriggerArrival = () => {
-    if (!activeTrip) return;
-    setActiveTrip((prev) => ({
-      ...prev,
-      progressPercent: 100,
-      currentStopIndex: prev.destinationStopIndex,
-      stopsRemaining: 0,
-      timeRemainingMins: 0,
-      distanceRemainingKm: 0,
-      status: 'arrived',
-      isApproaching: true
-    }));
     setShowArrivalModal(true);
+    triggerVibration('alarm');
+    playSoundPreset(settings.alertSound);
+
+    if (user?.id && activeTrip) {
+      recordTripHistory(user.id, activeTrip).then(() => {
+        fetchUserTripHistory(user.id).then(setTripHistory);
+      });
+    }
   };
 
   const handleSnoozeTrip = (extraStops = 2) => {
-    if (!activeTrip) return;
-    setActiveTrip((prev) => ({
-      ...prev,
-      status: 'active',
-      progressPercent: Math.max(0, prev.progressPercent - 30),
-      stopsRemaining: prev.stopsRemaining + extraStops,
-      timeRemainingMins: prev.timeRemainingMins + extraStops * 2.5,
-      isApproaching: false
-    }));
     setShowArrivalModal(false);
-  };
-
-  const handleExtendMinutes = (extraMins = 5) => {
-    if (!activeTrip) return;
-    setActiveTrip((prev) => ({
-      ...prev,
-      status: 'active',
-      progressPercent: Math.max(0, prev.progressPercent - 20),
-      timeRemainingMins: prev.timeRemainingMins + extraMins,
-      isApproaching: false
-    }));
-    setShowArrivalModal(false);
+    setActiveTrip((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        status: 'active',
+        stopsRemaining: prev.stopsRemaining + extraStops,
+        isApproaching: false
+      };
+    });
+    triggerVibration('tap');
   };
 
   const handleEndTrip = () => {
+    if (user?.id && activeTrip) {
+      recordTripHistory(user.id, activeTrip).then(() => {
+        fetchUserTripHistory(user.id).then(setTripHistory);
+      });
+    }
+
     setActiveTrip(null);
     setShowArrivalModal(false);
     setActiveTab('home');
+    triggerVibration('tap');
   };
 
-  const updateSettings = (partial) => {
-    setSettings((prev) => ({ ...prev, ...partial }));
+  const updateSettings = (newPartial) => {
+    setSettings((prev) => ({ ...prev, ...newPartial }));
   };
 
   const resetSettings = () => {
@@ -361,6 +365,41 @@ export default function App() {
     });
   };
 
+  // 1. Initial Session Loading Screen
+  if (authLoading) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          background: 'var(--bg-primary)',
+          color: 'var(--text-primary)'
+        }}
+      >
+        <Loader2 size={36} color="var(--accent)" className="spin" style={{ marginBottom: '1rem' }} />
+        <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>Connecting to StopAhead...</div>
+      </div>
+    );
+  }
+
+  // 2. Auth Guard: Unauthenticated Users see AuthScreen
+  if (!user) {
+    return (
+      <div className="app-wrapper" style={{ justifyContent: 'center' }}>
+        <AuthScreen
+          onAuthSuccess={(authUser, authSession) => {
+            setUser(authUser);
+            setSession(authSession);
+          }}
+        />
+      </div>
+    );
+  }
+
+  // 3. Main Authenticated Application Views
   return (
     <div className="app-wrapper">
       {/* Top Header */}
@@ -368,16 +407,19 @@ export default function App() {
         activeTrip={activeTrip}
         onNavigate={setActiveTab}
         gpsMode={settings.gpsMode}
+        user={user}
       />
 
-      {/* Screen Views */}
+      {/* Main Content Area */}
       <main className="main-content">
         {activeTab === 'home' && (
           <HomeScreen
             activeTrip={activeTrip}
+            savedRoutes={savedRoutes}
+            tripHistory={tripHistory}
             onStartTrip={startTrip}
+            onDeleteSavedRoute={handleDeleteSavedRoute}
             onNavigate={setActiveTab}
-            onQuickDemo={launchQuickDemo}
           />
         )}
 
@@ -388,6 +430,7 @@ export default function App() {
             defaultSettings={settings}
             userLocation={userLocation}
             onUpdateUserLocation={setUserLocation}
+            onSaveRoute={handleSaveRoute}
           />
         )}
 
@@ -402,10 +445,7 @@ export default function App() {
             onAdvanceStop={handleAdvanceStop}
             onJumpToThreshold={handleJumpToThreshold}
             onTriggerArrival={handleTriggerArrival}
-            onToggleGpsMode={() =>
-              updateSettings({ gpsMode: settings.gpsMode === 'real' ? 'simulated' : 'real' })
-            }
-            onSnoozeTrip={() => handleSnoozeTrip(2)}
+            onSnoozeTrip={handleSnoozeTrip}
             onEndTrip={handleEndTrip}
             onNavigate={setActiveTab}
           />
@@ -416,6 +456,8 @@ export default function App() {
             settings={settings}
             onUpdateSettings={updateSettings}
             onResetSettings={resetSettings}
+            user={user}
+            onSignOut={handleSignOut}
           />
         )}
       </main>
@@ -429,7 +471,6 @@ export default function App() {
           isHighContrast={settings.isHighContrast}
           onGettingOff={handleEndTrip}
           onSnooze={handleSnoozeTrip}
-          onExtendMinutes={handleExtendMinutes}
         />
       )}
 

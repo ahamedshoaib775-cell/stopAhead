@@ -1,9 +1,13 @@
-// HomeScreen.jsx - Minimal and calm home screen dashboard
+// HomeScreen.jsx - Minimal dashboard rendering user's real saved routes & trip history from Supabase DB
 import React from 'react';
-import { MapPin, ArrowRight, Compass, Radio } from 'lucide-react';
+import { MapPin, ArrowRight, Compass, Radio, Bookmark, Trash2, Clock, CheckCircle } from 'lucide-react';
 
 export default function HomeScreen({
   activeTrip,
+  savedRoutes = [],
+  tripHistory = [],
+  onStartTrip,
+  onDeleteSavedRoute,
   onNavigate
 }) {
   return (
@@ -82,25 +86,113 @@ export default function HomeScreen({
         </div>
       )}
 
-      {/* Quick Launch Card */}
-      <div
-        className="quiet-card interactive"
-        onClick={() => onNavigate('set-destination')}
-        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.2rem 1.25rem' }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-          <Compass size={20} color="var(--accent)" />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-              Search Nearby Transit
-            </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Live Overpass API query for your city
-            </div>
+      {/* Saved Favorite Routes Section */}
+      <div>
+        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <Bookmark size={14} color="var(--accent)" />
+          <span>My Saved Favorite Routes ({savedRoutes.length})</span>
+        </div>
+
+        {savedRoutes.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            {savedRoutes.map((route) => (
+              <div
+                key={route.id}
+                className="quiet-card interactive"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.9rem 1.1rem' }}
+              >
+                <div
+                  onClick={() => {
+                    const destStop = {
+                      id: `dest-${route.id}`,
+                      name: route.destination_name,
+                      lat: route.destination_lat,
+                      lng: route.destination_lng
+                    };
+                    const originStop = route.origin_lat && route.origin_lng ? {
+                      id: `orig-${route.id}`,
+                      name: route.origin_name || 'Origin',
+                      lat: route.origin_lat,
+                      lng: route.origin_lng
+                    } : null;
+
+                    onStartTrip(originStop, destStop, route.threshold_type || 'stops', route.threshold_value || 2);
+                  }}
+                  style={{ flex: 1, cursor: 'pointer' }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                    {route.title || route.destination_name}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    To: {route.destination_name}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteSavedRoute(route.id);
+                  }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.4rem' }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              padding: '1rem',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px dashed var(--border-color)',
+              fontSize: '0.82rem',
+              color: 'var(--text-muted)',
+              textAlign: 'center'
+            }}
+          >
+            No saved routes yet. Search any destination and tap ⭐ Save to My Routes to bookmark your daily commutes here.
+          </div>
+        )}
+      </div>
+
+      {/* Recent Trip History */}
+      {tripHistory.length > 0 && (
+        <div>
+          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Clock size={14} color="var(--accent)" />
+            <span>Recent Trip History</span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {tripHistory.slice(0, 3).map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  padding: '0.75rem 0.9rem',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{item.destination_name}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>From {item.origin_name}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: 'var(--accent)' }}>
+                  <CheckCircle size={13} />
+                  <span>{item.status}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-        <ArrowRight size={18} color="var(--text-muted)" />
-      </div>
+      )}
     </div>
   );
 }
