@@ -202,28 +202,7 @@ export default function SetDestinationScreen({
         />
       )}
 
-      {/* Developer Location Debug Bar */}
-      {userLocation && (
-        <div
-          style={{
-            padding: '0.4rem 0.75rem',
-            borderRadius: 'var(--radius-sm)',
-            background: 'rgba(0, 240, 255, 0.08)',
-            border: '1px solid rgba(0, 240, 255, 0.25)',
-            color: 'var(--accent)',
-            fontSize: '0.72rem',
-            fontFamily: 'monospace',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}
-        >
-          <div>
-            <strong>GPS DEBUG:</strong> [{userLocation.lat?.toFixed(4)}, {userLocation.lng?.toFixed(4)}] • {userLocation.cityName}
-          </div>
-          <div style={{ fontWeight: 700 }}>Overpass Live API (bounded=1)</div>
-        </div>
-      )}
+
 
       {/* Title & OpenStreetMap Badge */}
       <div>
