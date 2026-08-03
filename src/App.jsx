@@ -184,8 +184,8 @@ export default function App() {
     console.log('[StopAhead Alarm] State transition: idle (New Trip Initialized)');
 
     const distKm = calculateHaversineDistance(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng) || 2.5;
-    const estMins = Math.max(2, Math.ceil(distKm * 2.5));
-    const estimatedStops = Math.max(1, Math.ceil(distKm / 0.8));
+    const estMins = Math.max(2, Math.ceil(distKm * 2.2));
+    const estimatedStops = Math.max(1, Math.ceil(distKm / 1.2));
 
     // Construct initial trip state
     const initialTrip = {
@@ -193,6 +193,7 @@ export default function App() {
       destinationStop,
       currentStopIndex: 0,
       destinationStopIndex: estimatedStops,
+      totalTripDistanceKm: parseFloat(distKm.toFixed(1)),
       progressPercent: 0,
       thresholdType: thresholdType || settings.defaultThresholdType,
       thresholdValue: thresholdValue || settings.defaultThresholdValue,
@@ -206,6 +207,7 @@ export default function App() {
       isApproaching: false,
       isLoadingRoute: true,
       routeError: null,
+      routePointIndex: 0,
       route: {
         name: `${origin.name} → ${destinationStop.name}`,
         stops: [origin, destinationStop],
@@ -223,11 +225,17 @@ export default function App() {
     try {
       const osrmResult = await fetchOSRMRoute(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng);
       if (osrmResult && osrmResult.success) {
+        const realDist = parseFloat(osrmResult.distKm.toFixed(1));
+        const realStops = Math.max(1, Math.ceil(realDist / 1.2));
+
         setActiveTrip((prev) => prev ? ({
           ...prev,
           isLoadingRoute: false,
-          distanceRemainingKm: parseFloat(osrmResult.distKm.toFixed(1)),
+          totalTripDistanceKm: realDist,
+          distanceRemainingKm: realDist,
           timeRemainingMins: osrmResult.durationMins,
+          stopsRemaining: realStops,
+          destinationStopIndex: realStops,
           route: {
             name: `${origin.name} → ${destinationStop.name}`,
             stops: [origin, destinationStop],
@@ -257,22 +265,37 @@ export default function App() {
       setActiveTrip((prev) => {
         if (!prev || prev.status !== 'active') return prev;
 
-        const { stopsRemaining, thresholdType, thresholdValue, soundId, isApproaching, distanceRemainingKm, alarmState, hasFiredThisTrip, route, routePointIndex = 0 } = prev;
+        const {
+          originStop,
+          destinationStop,
+          thresholdType,
+          thresholdValue,
+          soundId,
+          isApproaching,
+          alarmState,
+          hasFiredThisTrip,
+          route,
+          routePointIndex = 0,
+          totalTripDistanceKm = 2.5
+        } = prev;
 
         const coords = route?.coordinates || [];
         const totalPoints = coords.length;
 
-        // Step along OSRM road polyline coordinates for smooth curve-following
+        let curLat = originStop?.lat || userLocation?.lat || 13.0827;
+        let curLng = originStop?.lng || userLocation?.lng || 80.2707;
         let nextPointIdx = routePointIndex;
+
+        // Step smoothly along OSRM road polyline coordinates
         if (totalPoints > 1) {
-          const stepSize = Math.max(1, Math.ceil(totalPoints / (prev.destinationStopIndex * 4 || 16)));
+          const stepSize = Math.max(1, Math.ceil(totalPoints / 30));
           nextPointIdx = Math.min(totalPoints - 1, routePointIndex + stepSize);
           const currentPoint = coords[nextPointIdx];
           const prevPoint = coords[Math.max(0, nextPointIdx - 1)];
 
           if (currentPoint && currentPoint.length >= 2) {
-            const curLat = currentPoint[0];
-            const curLng = currentPoint[1];
+            curLat = currentPoint[0];
+            curLng = currentPoint[1];
             let headingDeg = 0;
             if (prevPoint && prevPoint.length >= 2) {
               headingDeg = calculateBearing(prevPoint[0], prevPoint[1], curLat, curLng);
@@ -287,20 +310,20 @@ export default function App() {
           }
         }
 
-        const newStopsLeft = Math.max(0, stopsRemaining - 1);
-        const newDistLeft = Math.max(0, distanceRemainingKm - 0.8);
-        const newTimeLeft = Math.max(0, Math.ceil(newDistLeft * 2.5));
-        const totalStops = prev.destinationStopIndex || 4;
-        const newProgress = totalPoints > 1
-          ? Math.min(100, Math.round((nextPointIdx / (totalPoints - 1)) * 100))
-          : Math.min(100, Math.round(((totalStops - newStopsLeft) / totalStops) * 100));
+        // Calculate REAL distance remaining in kilometers to destination from current position
+        const destLat = destinationStop?.lat || curLat;
+        const destLng = destinationStop?.lng || curLng;
+        const newDistLeft = parseFloat(calculateHaversineDistance(curLat, curLng, destLat, destLng).toFixed(1));
+        const newStopsLeft = Math.max(0, Math.ceil(newDistLeft / 1.2));
+        const newTimeLeft = Math.max(0, Math.ceil(newDistLeft * 2.2));
+        const newProgress = Math.min(100, Math.round(((totalTripDistanceKm - newDistLeft) / totalTripDistanceKm) * 100));
 
         let currentAlarmState = alarmState || 'idle';
         let currentApproaching = isApproaching;
 
         // Check if reaching threshold strictly (e.g. 2 stops before destination)
-        // Guard: Must have departed origin (newProgress >= 20% or newStopsLeft < totalStops) to avoid immediate alert at start
-        const hasDepartedOrigin = newProgress >= 20 || newStopsLeft < totalStops;
+        // Guard: Must have departed origin (newProgress >= 15%) to avoid immediate alert at start
+        const hasDepartedOrigin = newProgress >= 15;
 
         const isWithinThreshold =
           hasDepartedOrigin &&
@@ -325,7 +348,9 @@ export default function App() {
           speakVoiceAlert("Your stop is approaching. Please prepare to get off.");
         }
 
-        if (newStopsLeft === 0 && user?.id) {
+        const isTripFinished = nextPointIdx >= totalPoints - 1 || newDistLeft <= 0.1;
+
+        if (isTripFinished && user?.id) {
           recordTripHistory(user.id, prev).then(() => {
             fetchUserTripHistory(user.id).then(setTripHistory);
           });
@@ -336,11 +361,11 @@ export default function App() {
           routePointIndex: nextPointIdx,
           stopsRemaining: newStopsLeft,
           timeRemainingMins: newTimeLeft,
-          distanceRemainingKm: parseFloat(newDistLeft.toFixed(1)),
+          distanceRemainingKm: newDistLeft,
           progressPercent: newProgress,
           alarmState: currentAlarmState,
           isApproaching: currentApproaching,
-          status: newStopsLeft === 0 ? 'arrived' : 'active'
+          status: isTripFinished ? 'arrived' : 'active'
         };
       });
     }, intervalMs);
