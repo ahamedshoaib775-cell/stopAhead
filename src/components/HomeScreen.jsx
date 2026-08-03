@@ -8,7 +8,8 @@ export default function HomeScreen({
   tripHistory = [],
   onStartTrip,
   onDeleteSavedRoute,
-  onNavigate
+  onNavigate,
+  onExpandFullScreen
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -75,14 +76,21 @@ export default function HomeScreen({
           </div>
         </div>
       ) : (
-        <div className="quiet-card" style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
-          <Radio size={24} color="var(--accent)" />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Real OpenStreetMap GPS Ready</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Detects real nearby bus and train stops live from your device coordinates.
+        <div
+          className="quiet-card interactive"
+          onClick={() => onExpandFullScreen && onExpandFullScreen()}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+            <Radio size={24} color="var(--accent)" />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Full-Screen Navigation Map</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Tap to launch OpenStreetMap full-screen live tracking
+              </div>
             </div>
           </div>
+          <ArrowRight size={18} color="var(--text-muted)" />
         </div>
       )}
 

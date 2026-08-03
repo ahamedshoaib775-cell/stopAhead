@@ -1,5 +1,5 @@
-// App.jsx - Main state management, Supabase Auth guards, DB persistence, watchPosition GPS tracking, and Alarm State Machine
-import React, { useState, useEffect, useRef } from 'react';
+// App.jsx - Main state management, Supabase Auth guards, DB persistence, watchPosition GPS tracking, Full-Screen Map, and Voice Navigation Engine
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import HomeScreen from './components/HomeScreen';
@@ -8,6 +8,7 @@ import ActiveTripScreen from './components/ActiveTripScreen';
 import ArrivalAlertModal from './components/ArrivalAlertModal';
 import SettingsScreen from './components/SettingsScreen';
 import AuthScreen from './components/AuthScreen';
+import FullScreenMapModal from './components/FullScreenMapModal';
 
 import { supabase } from './utils/supabaseClient';
 import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory } from './utils/dbService';
@@ -15,6 +16,7 @@ import { calculateHaversineDistance, calculateBearing } from './utils/geoHelper'
 import { fetchOSRMRoute } from './utils/osmService';
 import { triggerVibration, stopVibration } from './utils/vibrationHelper';
 import { playSoundPreset, stopAlertLoop } from './utils/audioSynthesizer';
+import { speakVoiceAlert, stopVoiceAlert } from './utils/speechService';
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -32,6 +34,9 @@ export default function App() {
   // Live Position & Heading Tracking State (watchPosition)
   const [userPosition, setUserPosition] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
+
+  // Full-Screen Map Modal State
+  const [isFullScreenMapOpen, setIsFullScreenMapOpen] = useState(false);
 
   // Application Settings State
   const [settings, setSettings] = useState(() => {
@@ -182,7 +187,7 @@ export default function App() {
     const estMins = Math.max(2, Math.ceil(distKm * 2.5));
     const estimatedStops = Math.max(1, Math.ceil(distKm / 0.8));
 
-    // Construct initial trip state with explicit alarm state machine
+    // Construct initial trip state
     const initialTrip = {
       originStop: origin,
       destinationStop,
@@ -196,7 +201,7 @@ export default function App() {
       timeRemainingMins: estMins,
       distanceRemainingKm: parseFloat(distKm.toFixed(1)),
       status: 'active',
-      alarmState: 'idle', // 'idle' | 'approaching' | 'alarm_triggered' | 'dismissed'
+      alarmState: 'idle',
       hasFiredThisTrip: false,
       isApproaching: false,
       isLoadingRoute: true,
@@ -242,7 +247,7 @@ export default function App() {
     }
   };
 
-  // Simulation Loop Timer with Alarm State Machine Engine
+  // Simulation Loop Timer with Alarm State Machine Engine & Web Speech API Voice Alerts
   useEffect(() => {
     if (!activeTrip || activeTrip.status !== 'active' || !isSimulating) return;
 
@@ -282,6 +287,7 @@ export default function App() {
           setShowArrivalModal(true);
           triggerVibration('alarm');
           playSoundPreset(soundId);
+          speakVoiceAlert("Your stop is approaching. Please prepare to get off.");
         }
 
         if (newStopsLeft === 0 && user?.id) {
@@ -311,6 +317,7 @@ export default function App() {
     console.log('[StopAhead Alarm] State transition: alarm_triggered → dismissed');
     stopAlertLoop();
     stopVibration();
+    stopVoiceAlert();
     setShowArrivalModal(false);
 
     setActiveTrip((prev) => prev ? ({
@@ -343,6 +350,7 @@ export default function App() {
     });
     triggerVibration('proximity');
     playSoundPreset(settings.alertSound);
+    speakVoiceAlert("Approaching threshold. Please be ready.");
   };
 
   const handleTriggerArrival = () => {
@@ -351,6 +359,7 @@ export default function App() {
     setShowArrivalModal(true);
     triggerVibration('alarm');
     playSoundPreset(settings.alertSound);
+    speakVoiceAlert("Your stop is approaching. Please prepare to get off.");
 
     setActiveTrip((prev) => prev ? ({
       ...prev,
@@ -385,6 +394,7 @@ export default function App() {
     console.log('[StopAhead Alarm] State transition: dismissed → idle (Trip Ended)');
     stopAlertLoop();
     stopVibration();
+    stopVoiceAlert();
 
     if (user?.id && activeTrip) {
       recordTripHistory(user.id, activeTrip).then(() => {
@@ -394,6 +404,7 @@ export default function App() {
 
     setActiveTrip(null);
     setShowArrivalModal(false);
+    setIsFullScreenMapOpen(false);
     setActiveTab('home');
     triggerVibration('tap');
   };
@@ -470,6 +481,7 @@ export default function App() {
             onStartTrip={startTrip}
             onDeleteSavedRoute={handleDeleteSavedRoute}
             onNavigate={setActiveTab}
+            onExpandFullScreen={() => setIsFullScreenMapOpen(true)}
           />
         )}
 
@@ -500,6 +512,7 @@ export default function App() {
             onEndTrip={handleEndTrip}
             onDismissAlarm={handleDismissAlarm}
             onNavigate={setActiveTab}
+            onExpandFullScreen={() => setIsFullScreenMapOpen(true)}
           />
         )}
 
@@ -514,6 +527,18 @@ export default function App() {
         )}
       </main>
 
+      {/* Full-Screen Live Navigation Map Modal */}
+      {isFullScreenMapOpen && (
+        <FullScreenMapModal
+          activeTrip={activeTrip}
+          userPosition={userPosition}
+          userLocation={userLocation}
+          onClose={() => setIsFullScreenMapOpen(false)}
+          onNavigate={setActiveTab}
+          onStartTrip={startTrip}
+        />
+      )}
+
       {/* Arrival Fullscreen Alert Overlay Modal */}
       {showArrivalModal && (
         <ArrivalAlertModal
@@ -526,12 +551,14 @@ export default function App() {
         />
       )}
 
-      {/* Mobile Navigation Bar */}
-      <BottomNav
-        activeTab={activeTab}
-        onNavigate={setActiveTab}
-        hasActiveTrip={activeTrip !== null && activeTrip.status !== 'idle'}
-      />
+      {/* Mobile Navigation Bar (Hidden when full-screen map modal is open) */}
+      {!isFullScreenMapOpen && (
+        <BottomNav
+          activeTab={activeTab}
+          onNavigate={setActiveTab}
+          hasActiveTrip={activeTrip !== null && activeTrip.status !== 'idle'}
+        />
+      )}
     </div>
   );
 }

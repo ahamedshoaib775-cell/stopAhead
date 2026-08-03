@@ -1,5 +1,11 @@
-// LeafletMap.jsx - Interactive OpenStreetMap rendering via Leaflet.js with live directional heading rotation
+// LeafletMap.jsx - Interactive OpenStreetMap rendering via Leaflet.js with live directional heading rotation & tile layer switching
 import React, { useEffect, useRef } from 'react';
+
+const TILE_URLS = {
+  standard: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+};
 
 export default function LeafletMap({
   originCoords,
@@ -7,10 +13,15 @@ export default function LeafletMap({
   currentCoords,
   heading = 0,
   stops = [],
-  height = '180px'
+  height = '180px',
+  tileStyle = 'standard',
+  interactive = true,
+  onMapClick,
+  onExpandFullScreen
 }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const tileLayerRef = useRef(null);
   const userMarkerRef = useRef(null);
   const markersRef = useRef([]);
   const polylineRef = useRef(null);
@@ -21,15 +32,15 @@ export default function LeafletMap({
     return window.L.divIcon({
       className: 'user-navigation-arrow-marker',
       html: `
-        <div style="transform: rotate(${deg}deg); transition: transform 0.3s ease; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0px 2px 6px rgba(0,229,255,0.6));">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="11" fill="rgba(0, 229, 255, 0.25)" stroke="#00E5FF" stroke-width="1.5"/>
+        <div style="transform: rotate(${deg}deg); transition: transform 0.3s ease; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0px 2px 8px rgba(0,229,255,0.7));">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="11" fill="rgba(0, 229, 255, 0.28)" stroke="#00E5FF" stroke-width="1.5"/>
             <path d="M12 2L18 19L12 15L6 19L12 2Z" fill="#00E5FF" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
           </svg>
         </div>
       `,
-      iconSize: [34, 34],
-      iconAnchor: [17, 17]
+      iconSize: [36, 36],
+      iconAnchor: [18, 18]
     });
   };
 
@@ -47,9 +58,15 @@ export default function LeafletMap({
         attributionControl: false
       });
 
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
-      }).addTo(map);
+      const tileUrl = TILE_URLS[tileStyle] || TILE_URLS.standard;
+      tileLayerRef.current = window.L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(map);
+
+      // Handle map tap/long-press click event to pick destination
+      map.on('click', (e) => {
+        if (onMapClick) {
+          onMapClick(e.latlng.lat, e.latlng.lng);
+        }
+      });
 
       mapInstanceRef.current = map;
     } else if (mapInstanceRef.current && targetCenter) {
@@ -58,6 +75,15 @@ export default function LeafletMap({
 
     const map = mapInstanceRef.current;
     if (!map) return;
+
+    // Switch Tile Layer Imagery cleanly if style changed
+    if (tileLayerRef.current) {
+      const targetUrl = TILE_URLS[tileStyle] || TILE_URLS.standard;
+      if (tileLayerRef.current._url !== targetUrl) {
+        map.removeLayer(tileLayerRef.current);
+        tileLayerRef.current = window.L.tileLayer(targetUrl, { maxZoom: 19 }).addTo(map);
+      }
+    }
 
     // Clear existing static stop markers and polyline
     markersRef.current.forEach((m) => map.removeLayer(m));
@@ -115,18 +141,21 @@ export default function LeafletMap({
         dashArray: '6, 8'
       }).addTo(map);
     }
-  }, [originCoords, destCoords, currentCoords, heading, stops]);
+  }, [originCoords, destCoords, currentCoords, heading, stops, tileStyle, onMapClick]);
 
   return (
     <div
       ref={mapContainerRef}
+      onClick={() => onExpandFullScreen && onExpandFullScreen()}
       style={{
         width: '100%',
         height,
         borderRadius: 'var(--radius-md)',
         overflow: 'hidden',
         border: '1px solid var(--border-color)',
-        boxShadow: 'var(--shadow-subtle)'
+        boxShadow: 'var(--shadow-subtle)',
+        cursor: onExpandFullScreen ? 'pointer' : 'default',
+        position: 'relative'
       }}
     />
   );

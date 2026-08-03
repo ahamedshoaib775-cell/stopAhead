@@ -17,7 +17,8 @@ export default function ActiveTripScreen({
   onSnoozeTrip,
   onEndTrip,
   onDismissAlarm,
-  onNavigate
+  onNavigate,
+  onExpandFullScreen
 }) {
   // Console logging for active trip render state
   console.log('[StopAhead] Rendering ActiveTripScreen. Active trip state:', activeTrip);
@@ -191,12 +192,22 @@ export default function ActiveTripScreen({
           <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Live Route Tracker
           </div>
-          {isLoadingRoute && (
-            <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <Loader2 size={12} className="spin" />
-              <span>Fetching OSRM polyline...</span>
-            </div>
-          )}
+          <div
+            onClick={onExpandFullScreen}
+            style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}
+          >
+            {isLoadingRoute ? (
+              <>
+                <Loader2 size={12} className="spin" />
+                <span>Fetching OSRM polyline...</span>
+              </>
+            ) : (
+              <>
+                <Compass size={12} />
+                <span>Tap for Full-Screen Navigation</span>
+              </>
+            )}
+          </div>
         </div>
 
         <LeafletMap
@@ -206,6 +217,7 @@ export default function ActiveTripScreen({
           heading={activeHeading}
           stops={mapStops}
           height="190px"
+          onExpandFullScreen={onExpandFullScreen}
         />
       </div>
 
