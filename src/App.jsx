@@ -257,13 +257,43 @@ export default function App() {
       setActiveTrip((prev) => {
         if (!prev || prev.status !== 'active') return prev;
 
-        const { stopsRemaining, thresholdType, thresholdValue, soundId, isApproaching, distanceRemainingKm, alarmState, hasFiredThisTrip } = prev;
+        const { stopsRemaining, thresholdType, thresholdValue, soundId, isApproaching, distanceRemainingKm, alarmState, hasFiredThisTrip, route, routePointIndex = 0 } = prev;
+
+        const coords = route?.coordinates || [];
+        const totalPoints = coords.length;
+
+        // Step along OSRM road polyline coordinates for smooth curve-following
+        let nextPointIdx = routePointIndex;
+        if (totalPoints > 1) {
+          const stepSize = Math.max(1, Math.ceil(totalPoints / (prev.destinationStopIndex * 4 || 16)));
+          nextPointIdx = Math.min(totalPoints - 1, routePointIndex + stepSize);
+          const currentPoint = coords[nextPointIdx];
+          const prevPoint = coords[Math.max(0, nextPointIdx - 1)];
+
+          if (currentPoint && currentPoint.length >= 2) {
+            const curLat = currentPoint[0];
+            const curLng = currentPoint[1];
+            let headingDeg = 0;
+            if (prevPoint && prevPoint.length >= 2) {
+              headingDeg = calculateBearing(prevPoint[0], prevPoint[1], curLat, curLng);
+            }
+
+            console.log(`[StopAhead Route] Moving along road polyline (${nextPointIdx}/${totalPoints}): Lat ${curLat.toFixed(4)}, Lng ${curLng.toFixed(4)}, Heading: ${headingDeg}°`);
+            setUserPosition({
+              lat: curLat,
+              lng: curLng,
+              heading: headingDeg
+            });
+          }
+        }
 
         const newStopsLeft = Math.max(0, stopsRemaining - 1);
         const newDistLeft = Math.max(0, distanceRemainingKm - 0.8);
         const newTimeLeft = Math.max(0, Math.ceil(newDistLeft * 2.5));
         const totalStops = prev.destinationStopIndex || 4;
-        const newProgress = Math.min(100, Math.round(((totalStops - newStopsLeft) / totalStops) * 100));
+        const newProgress = totalPoints > 1
+          ? Math.min(100, Math.round((nextPointIdx / (totalPoints - 1)) * 100))
+          : Math.min(100, Math.round(((totalStops - newStopsLeft) / totalStops) * 100));
 
         let currentAlarmState = alarmState || 'idle';
         let currentApproaching = isApproaching;
@@ -298,6 +328,7 @@ export default function App() {
 
         return {
           ...prev,
+          routePointIndex: nextPointIdx,
           stopsRemaining: newStopsLeft,
           timeRemainingMins: newTimeLeft,
           distanceRemainingKm: parseFloat(newDistLeft.toFixed(1)),
