@@ -203,7 +203,7 @@ html, body {
   color: var(--accent);
 }
 
-/* Minimal Bottom Navigation Bar */
+/* Minimal Bottom Navigation Bar with Safe Area Support */
 .bottom-nav {
   position: fixed;
   bottom: 0;
@@ -211,13 +211,20 @@ html, body {
   transform: translateX(-50%);
   width: 100%;
   max-width: var(--app-max-width);
-  height: 64px;
+  height: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--bg-surface);
   border-top: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-around;
   z-index: 50;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button:active, .interactive:active {
+  transform: scale(0.98);
 }
 
 .nav-tab {
