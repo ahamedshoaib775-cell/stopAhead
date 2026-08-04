@@ -69,12 +69,24 @@ export async function searchNominatimPlaces(query, locationBias = null) {
 }
 
 /**
- * Overpass API Live OpenStreetMap Query for nearby transit stops (bus, rail, tram)
+ * Overpass API Live OpenStreetMap Query for nearby transit stops filtered by transport mode
  */
-export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000) {
+export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2500, transportMode = 'bus') {
   if (!lat || !lng) return [];
 
-  const overpassQuery = `[out:json][timeout:15];(node["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});node["public_transport"="platform"](around:${radiusMeters},${lat},${lng});node["railway"="station"](around:${radiusMeters},${lat},${lng});node["railway"="tram_stop"](around:${radiusMeters},${lat},${lng});node["amenity"="bus_station"](around:${radiusMeters},${lat},${lng}););out body 25;`;
+  let modeFilter = '';
+  if (transportMode === 'metro') {
+    modeFilter = `node["railway"="station"]["station"="subway"](around:${radiusMeters},${lat},${lng});node["railway"="subway_entrance"](around:${radiusMeters},${lat},${lng});node["station"="subway"](around:${radiusMeters},${lat},${lng});`;
+  } else if (transportMode === 'train') {
+    modeFilter = `node["railway"="station"](around:${radiusMeters},${lat},${lng});node["public_transport"="station"]["train"="yes"](around:${radiusMeters},${lat},${lng});`;
+  } else if (transportMode === 'local_train') {
+    modeFilter = `node["railway"="halt"](around:${radiusMeters},${lat},${lng});node["railway"="station"](around:${radiusMeters},${lat},${lng});node["public_transport"="station"](around:${radiusMeters},${lat},${lng});`;
+  } else {
+    // Default 'bus'
+    modeFilter = `node["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});node["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});node["public_transport"="platform"](around:${radiusMeters},${lat},${lng});`;
+  }
+
+  const overpassQuery = `[out:json][timeout:15];(${modeFilter});out body 30;`;
 
   try {
     const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`);
@@ -106,7 +118,14 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000) {
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             const distKm = parseFloat((R * c).toFixed(1));
 
-            const typeLabel = tags.railway === 'station' ? 'Railway Station' : tags.amenity === 'bus_station' ? 'Bus Station' : 'Bus / Transit Stop';
+            const typeLabels = {
+              bus: tags.amenity === 'bus_station' ? 'Bus Station' : 'Bus Stop',
+              train: 'Railway Station',
+              metro: tags.railway === 'subway_entrance' ? 'Metro Entrance' : 'Metro Station',
+              local_train: tags.railway === 'halt' ? 'Suburban Halt' : 'Local Railway Station'
+            };
+
+            const typeLabel = typeLabels[transportMode] || 'Transit Stop';
 
             return {
               id: `overpass-${el.id}`,
@@ -115,6 +134,7 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000) {
               lat: itemLat,
               lng: itemLng,
               distKm,
+              transportMode,
               isOsmPlace: true
             };
           })
@@ -137,7 +157,7 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000) {
   }
 
   // Fallback to Nominatim live transit query if Overpass is unavailable
-  return fetchNearbyTransitStops(lat, lng);
+  return fetchNearbyTransitStops(lat, lng, transportMode);
 }
 
 /**
@@ -252,7 +272,14 @@ export async function geocodeCity(cityName) {
 /**
  * Calculate Route Polyline & Distance between Coordinates (Free OSRM / OpenRouteService)
  */
-export async function fetchOSRMRoute(startLat, startLng, endLat, endLng) {
+export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode = 'bus') {
+  const modeSpeedKmH = {
+    bus: 25,
+    metro: 40,
+    local_train: 45,
+    train: 65
+  }[transportMode] || 30;
+
   try {
     const key = getOpenRouteServiceKey();
     let url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
@@ -271,13 +298,15 @@ export async function fetchOSRMRoute(startLat, startLng, endLat, endLng) {
     if (data.routes && data.routes.length > 0) {
       const route = data.routes[0];
       const distKm = (route.distance || route.summary.distance) / 1000;
-      const durationMins = Math.ceil((route.duration || route.summary.duration) / 60);
+      // Tailor ETA to the selected vehicle type speed profile
+      const durationMins = Math.max(1, Math.ceil((distKm / modeSpeedKmH) * 60));
       const coordinates = route.geometry.coordinates.map((coord) => [coord[1], coord[0]]); // [lat, lng]
 
       return {
         success: true,
-        distKm,
+        distKm: parseFloat(distKm.toFixed(1)),
         durationMins,
+        transportMode,
         coordinates
       };
     }
@@ -296,12 +325,13 @@ export async function fetchOSRMRoute(startLat, startLng, endLat, endLng) {
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distKm = R * c;
+  const distKm = parseFloat((R * c).toFixed(1));
 
   return {
     success: true,
     distKm,
-    durationMins: Math.ceil(distKm * 2), // ~30km/h transit average
+    durationMins: Math.max(1, Math.ceil((distKm / modeSpeedKmH) * 60)),
+    transportMode,
     coordinates: [
       [startLat, startLng],
       [endLat, endLng]

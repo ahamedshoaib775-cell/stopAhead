@@ -49,26 +49,6 @@ export default function FullScreenMapModal({
       ]
     : [];
 
-  // Long-press / Map tap handler to choose destination
-  const handleMapClick = (lat, lng) => {
-    const customDest = {
-      id: `map-dest-${Date.now()}`,
-      name: `Pinned Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
-      lat,
-      lng
-    };
-
-    if (onStartTrip) {
-      const origin = {
-        id: 'current-pos',
-        name: `Current Position`,
-        lat: currentLat,
-        lng: currentLng
-      };
-      onStartTrip(origin, customDest);
-    }
-  };
-
   return (
     <div
       style={{
@@ -193,7 +173,7 @@ export default function FullScreenMapModal({
             >
               {[
                 { id: 'dark', label: 'Dark Mode' },
-                { id: 'standard', label: 'Standard OSM' },
+                { id: 'standard', label: 'Standard Map' },
                 { id: 'satellite', label: 'Satellite' }
               ].map((layer) => (
                 <button
@@ -233,7 +213,6 @@ export default function FullScreenMapModal({
           stops={mapStops}
           height="100vh"
           tileStyle={tileStyle}
-          onMapClick={handleMapClick}
         />
       </div>
 

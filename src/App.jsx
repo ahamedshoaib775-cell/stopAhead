@@ -1,4 +1,3 @@
-// App.jsx - Main state management, Supabase Auth guards, DB persistence, watchPosition GPS tracking, Full-Screen Map, and Voice Navigation Engine
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -9,9 +8,14 @@ import ArrivalAlertModal from './components/ArrivalAlertModal';
 import SettingsScreen from './components/SettingsScreen';
 import AuthScreen from './components/AuthScreen';
 import FullScreenMapModal from './components/FullScreenMapModal';
+import EmergencySOSModal from './components/EmergencySOSModal';
+import ShareTripModal from './components/ShareTripModal';
+import AutoCheckInModal from './components/AutoCheckInModal';
+import CommunityDisruptionModal from './components/CommunityDisruptionModal';
+import StopReportModal from './components/StopReportModal';
 
 import { supabase } from './utils/supabaseClient';
-import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory } from './utils/dbService';
+import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports } from './utils/dbService';
 import { calculateHaversineDistance, calculateBearing } from './utils/geoHelper';
 import { fetchOSRMRoute } from './utils/osmService';
 import { triggerVibration, stopVibration } from './utils/vibrationHelper';
@@ -52,9 +56,28 @@ export default function App() {
       themeMode: 'dark',
       isHighContrast: false,
       fontSizeScale: 'standard',
-      gpsMode: 'simulated'
+      gpsMode: 'simulated',
+      voiceAlertsEnabled: true,
+      language: 'en'
     };
   });
+
+  // Advanced Feature Modal States
+  const [showSOSModal, setShowSOSModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showCheckInModal, setShowCheckInModal] = useState(false);
+  const [showDisruptionModal, setShowDisruptionModal] = useState(false);
+  const [showStopReportModal, setShowStopReportModal] = useState(false);
+  const [delayReports, setDelayReports] = useState([]);
+
+  // Fetch Community Delay Reports
+  const reloadDelayReports = () => {
+    fetchDelayReports().then(setDelayReports);
+  };
+
+  useEffect(() => {
+    reloadDelayReports();
+  }, []);
 
   // Check initial Supabase Auth session & listen to state changes
   useEffect(() => {
@@ -167,7 +190,7 @@ export default function App() {
   };
 
   // Initialize & Start a Trip
-  const startTrip = async (originStop, destinationStop, thresholdType, thresholdValue, soundId) => {
+  const startTrip = async (originStop, destinationStop, thresholdType, thresholdValue, soundId, transportMode = 'bus') => {
     if (!destinationStop) {
       console.warn('[StopAhead] Cannot start trip: Destination stop is null or undefined.');
       return;
@@ -180,7 +203,7 @@ export default function App() {
       lng: userLocation?.lng || (destinationStop.lng - 0.015)
     };
 
-    console.log('[StopAhead] Starting trip initialization...');
+    console.log('[StopAhead] Starting trip initialization. Mode:', transportMode);
     console.log('[StopAhead Alarm] State transition: idle (New Trip Initialized)');
 
     const distKm = calculateHaversineDistance(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng) || 2.5;
@@ -191,6 +214,7 @@ export default function App() {
     const initialTrip = {
       originStop: origin,
       destinationStop,
+      transportMode: transportMode || 'bus',
       currentStopIndex: 0,
       destinationStopIndex: estimatedStops,
       totalTripDistanceKm: parseFloat(distKm.toFixed(1)),
@@ -221,9 +245,9 @@ export default function App() {
     setActiveTab('active-trip');
     triggerVibration('tap');
 
-    // Fetch live OSRM polyline & routing details asynchronously
+    // Fetch live OSRM polyline & routing details asynchronously with vehicle-specific speed profile
     try {
-      const osrmResult = await fetchOSRMRoute(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng);
+      const osrmResult = await fetchOSRMRoute(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng, transportMode);
       if (osrmResult && osrmResult.success) {
         const realDist = parseFloat(osrmResult.distKm.toFixed(1));
         const realStops = Math.max(1, Math.ceil(realDist / 1.2));
@@ -345,7 +369,13 @@ export default function App() {
           setShowArrivalModal(true);
           triggerVibration('alarm');
           playSoundPreset(soundId);
-          speakVoiceAlert("Your stop is approaching. Please prepare to get off.");
+
+          if (settings.voiceAlertsEnabled) {
+            const announcementText = settings.language === 'ta'
+              ? `உங்கள் நிறுத்தம் ${destinationStop?.name || ''} அருகில் உள்ளது. இன்னும் ${newStopsLeft} நிறுத்தங்கள் மட்டுமே உள்ளன.`
+              : `Your stop, ${destinationStop?.name || 'destination'}, is ${newStopsLeft} ${newStopsLeft === 1 ? 'stop' : 'stops'} away. Please prepare to get off.`;
+            speakVoiceAlert(announcementText, settings.language || 'en');
+          }
         }
 
         const isTripFinished = nextPointIdx >= totalPoints - 1 || newDistLeft <= 0.1;
@@ -487,7 +517,7 @@ export default function App() {
     });
   };
 
-  // 1. Initial Session Loading Screen
+  // 1. Initial Session Loading Screen (Splash Screen)
   if (authLoading) {
     return (
       <div
@@ -498,11 +528,51 @@ export default function App() {
           justifyContent: 'center',
           minHeight: '100vh',
           background: 'var(--bg-primary)',
-          color: 'var(--text-primary)'
+          color: 'var(--text-primary)',
+          padding: '2rem',
+          textAlign: 'center'
         }}
       >
-        <Loader2 size={36} color="var(--accent)" className="spin" style={{ marginBottom: '1rem' }} />
-        <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>Connecting to StopAhead...</div>
+        <div
+          style={{
+            background: '#ffffff',
+            padding: '2.25rem 1.75rem 1.75rem 1.75rem',
+            borderRadius: '28px',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.45)',
+            maxWidth: '320px',
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            marginBottom: '2.5rem'
+          }}
+        >
+          <img
+            src="/logo-sa.png"
+            alt="StopAhead - Never Miss Your Stop"
+            style={{
+              width: '100%',
+              maxWidth: '260px',
+              height: 'auto',
+              objectFit: 'contain',
+              display: 'block'
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            color: 'var(--text-secondary)',
+            fontSize: '0.88rem',
+            fontWeight: 600,
+            letterSpacing: '0.01em'
+          }}
+        >
+          <Loader2 size={20} color="var(--accent)" className="spin" />
+          <span>Starting StopAhead...</span>
+        </div>
       </div>
     );
   }
@@ -574,6 +644,10 @@ export default function App() {
             onDismissAlarm={handleDismissAlarm}
             onNavigate={setActiveTab}
             onExpandFullScreen={() => setIsFullScreenMapOpen(true)}
+            onOpenSOSModal={() => setShowSOSModal(true)}
+            onOpenShareModal={() => setShowShareModal(true)}
+            onOpenDisruptionModal={() => setShowDisruptionModal(true)}
+            onOpenStopReportModal={() => setShowStopReportModal(true)}
           />
         )}
 
@@ -609,6 +683,57 @@ export default function App() {
           isHighContrast={settings.isHighContrast}
           onGettingOff={handleEndTrip}
           onSnooze={handleSnoozeTrip}
+        />
+      )}
+
+      {/* Emergency SOS Modal */}
+      {showSOSModal && (
+        <EmergencySOSModal
+          activeTrip={activeTrip}
+          userPosition={userPosition}
+          userLocation={userLocation}
+          user={user}
+          onClose={() => setShowSOSModal(false)}
+        />
+      )}
+
+      {/* Share Trip Modal */}
+      {showShareModal && (
+        <ShareTripModal
+          activeTrip={activeTrip}
+          userPosition={userPosition}
+          userLocation={userLocation}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
+
+      {/* Auto Check-In Overlay */}
+      {showCheckInModal && (
+        <AutoCheckInModal
+          lang={settings.language || 'en'}
+          onSafe={() => setShowCheckInModal(false)}
+          onSOS={() => {
+            setShowCheckInModal(false);
+            setShowSOSModal(true);
+          }}
+        />
+      )}
+
+      {/* Community Disruption Hub Modal */}
+      {showDisruptionModal && (
+        <CommunityDisruptionModal
+          activeTrip={activeTrip}
+          reports={delayReports}
+          onRefreshReports={reloadDelayReports}
+          onClose={() => setShowDisruptionModal(false)}
+        />
+      )}
+
+      {/* Flag Stop Accuracy Modal */}
+      {showStopReportModal && (
+        <StopReportModal
+          stopName={activeTrip?.destinationStop?.name || 'Selected Stop'}
+          onClose={() => setShowStopReportModal(false)}
         />
       )}
 

@@ -50,6 +50,7 @@ export async function saveUserRoute(userId, routeData) {
     origin_lng: routeData.originLng || routeData.originStop?.lng,
     threshold_type: routeData.thresholdType || 'stops',
     threshold_value: routeData.thresholdValue || 2,
+    transport_mode: routeData.transportMode || 'bus',
     created_at: new Date().toISOString()
   };
 
@@ -135,6 +136,7 @@ export async function recordTripHistory(userId, tripData) {
     origin_name: tripData.originStop?.name || 'Start',
     distance_km: tripData.distanceRemainingKm || 0,
     status: tripData.isApproaching ? 'completed' : 'ended',
+    transport_mode: tripData.transportMode || 'bus',
     created_at: new Date().toISOString()
   };
 
@@ -148,4 +150,129 @@ export async function recordTripHistory(userId, tripData) {
   const existing = await fetchUserTripHistory(userId);
   const updated = [historyRecord, ...existing];
   localStorage.setItem(localKey, JSON.stringify(updated));
+}
+
+/**
+ * Emergency Contact Persistence (Local + Supabase)
+ */
+export async function fetchEmergencyContact(userId) {
+  const localKey = `stopahead_emergency_contact_${userId || 'guest'}`;
+  const stored = localStorage.getItem(localKey);
+  if (stored) {
+    try { return JSON.parse(stored); } catch (e) {}
+  }
+
+  if (userId) {
+    try {
+      const { data } = await supabase.from('emergency_contacts').select('*').eq('user_id', userId).limit(1);
+      if (data && data.length > 0) {
+        localStorage.setItem(localKey, JSON.stringify(data[0]));
+        return data[0];
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
+export async function saveEmergencyContact(userId, contactData) {
+  const record = {
+    id: `contact-${Date.now()}`,
+    user_id: userId || 'guest',
+    contact_name: contactData.name,
+    phone_number: contactData.phone,
+    created_at: new Date().toISOString()
+  };
+
+  const localKey = `stopahead_emergency_contact_${userId || 'guest'}`;
+  localStorage.setItem(localKey, JSON.stringify(record));
+
+  if (userId) {
+    try {
+      await supabase.from('emergency_contacts').upsert([record]);
+    } catch (e) {}
+  }
+  return record;
+}
+
+/**
+ * Community Delay & Disruption Reporting
+ */
+export async function fetchDelayReports() {
+  const localKey = 'stopahead_delay_reports';
+  try {
+    const { data, error } = await supabase.from('delay_reports').select('*').order('created_at', { ascending: false }).limit(20);
+    if (!error && data) {
+      // Filter out reports older than 60 minutes
+      const now = Date.now();
+      const valid = data.filter(r => (now - new Date(r.created_at).getTime()) < 3600000);
+      localStorage.setItem(localKey, JSON.stringify(valid));
+      return valid;
+    }
+  } catch (e) {}
+
+  const stored = localStorage.getItem(localKey);
+  if (stored) {
+    try {
+      const now = Date.now();
+      return JSON.parse(stored).filter(r => (now - new Date(r.created_at).getTime()) < 3600000);
+    } catch (e) {}
+  }
+  return [];
+}
+
+export async function createDelayReport(reportData) {
+  const record = {
+    id: `delay-${Date.now()}`,
+    stop_name: reportData.stopName,
+    route_name: reportData.routeName || 'General Route',
+    issue_type: reportData.issueType || 'bus_delayed',
+    description: reportData.description || 'Reported disruption',
+    helpful_votes: 1,
+    created_at: new Date().toISOString()
+  };
+
+  try {
+    await supabase.from('delay_reports').insert([record]);
+  } catch (e) {}
+
+  const existing = await fetchDelayReports();
+  const updated = [record, ...existing];
+  localStorage.setItem('stopahead_delay_reports', JSON.stringify(updated));
+  return record;
+}
+
+export async function upvoteDelayReport(reportId) {
+  const reports = await fetchDelayReports();
+  const updated = reports.map(r => r.id === reportId ? { ...r, helpful_votes: (r.helpful_votes || 1) + 1 } : r);
+  localStorage.setItem('stopahead_delay_reports', JSON.stringify(updated));
+
+  try {
+    const target = updated.find(r => r.id === reportId);
+    if (target) {
+      await supabase.from('delay_reports').update({ helpful_votes: target.helpful_votes }).eq('id', reportId);
+    }
+  } catch (e) {}
+  return updated;
+}
+
+/**
+ * Crowdsourced Stop Accuracy Reporting
+ */
+export async function createStopReport(reportData) {
+  const record = {
+    id: `stoprep-${Date.now()}`,
+    stop_name: reportData.stopName,
+    issue_type: reportData.issueType || 'incorrect_location',
+    details: reportData.details || '',
+    created_at: new Date().toISOString()
+  };
+
+  try {
+    await supabase.from('stop_reports').insert([record]);
+  } catch (e) {}
+
+  const localKey = 'stopahead_stop_reports';
+  const existing = JSON.parse(localStorage.getItem(localKey) || '[]');
+  localStorage.setItem(localKey, JSON.stringify([record, ...existing]));
+  return record;
 }

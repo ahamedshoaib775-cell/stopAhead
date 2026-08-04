@@ -7,16 +7,20 @@
   --bg-card: #151c28;
   --bg-card-hover: #1c2536;
   --border-color: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(0, 229, 255, 0.4);
+  --border-active: rgba(2, 90, 237, 0.4);
   
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #475569;
   
-  /* SINGLE VIVID ACCENT COLOR ONLY */
-  --accent: #00E5FF;
-  --accent-glow: rgba(0, 229, 255, 0.25);
-  --accent-text: #040914;
+  /* OFFICIAL STOPAHEAD LOGO CORE COLOR PALETTE */
+  --accent: #025AED;               /* Logo Blue Pin */
+  --accent-glow: rgba(2, 90, 237, 0.3);
+  --accent-text: #ffffff;
+
+  --color-success: #16A34A;        /* Logo Signal Green Wave */
+  --color-success-glow: rgba(22, 163, 74, 0.25);
+  --color-navy: #08172B;           /* Logo Wordmark Deep Navy */
 
   --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-display: 'Space Grotesk', var(--font-family);
@@ -355,4 +359,67 @@ input[type="range"]::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+/* Custom Leaflet Dark Map Styling & Branded Markers */
+.leaflet-container {
+  background-color: #0b0e14 !important;
+  font-family: var(--font-family) !important;
+  border-radius: var(--radius-lg);
+}
+
+.leaflet-tile {
+  filter: contrast(105%) brightness(95%);
+}
+
+.leaflet-control-attribution {
+  background: rgba(11, 14, 20, 0.75) !important;
+  color: var(--text-muted) !important;
+  font-size: 0.65rem !important;
+  border-radius: var(--radius-sm);
+  padding: 2px 6px !important;
+  backdrop-filter: blur(4px);
+}
+
+.leaflet-control-attribution a {
+  color: var(--text-secondary) !important;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+}
+
+.stopahead-dest-marker, .stopahead-user-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.leaflet-tooltip {
+  background: rgba(15, 20, 31, 0.92) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+  border-radius: var(--radius-sm) !important;
+  font-weight: 700 !important;
+  font-size: 0.75rem !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+  padding: 4px 8px !important;
+}
+
+.leaflet-tooltip-top:before {
+  border-top-color: rgba(15, 20, 31, 0.92) !important;
+}
+
+.leaflet-tooltip-bottom:before {
+  border-bottom-color: rgba(15, 20, 31, 0.92) !important;
 }

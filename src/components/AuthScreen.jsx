@@ -1,6 +1,6 @@
 // AuthScreen.jsx - Supabase Authentication (Sign In & Sign Up) component
 import React, { useState } from 'react';
-import { MapPin, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 
 export default function AuthScreen({ onAuthSuccess }) {
@@ -135,27 +135,35 @@ export default function AuthScreen({ onAuthSuccess }) {
         padding: '1rem 0'
       }}
     >
-      {/* Brand Header */}
-      <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
+      {/* Brand Header with Official Full StopAhead Logo */}
+      <div style={{ textAlign: 'center', marginBottom: '1.5rem', width: '100%', maxWidth: '340px' }}>
         <div
           style={{
-            width: '54px',
-            height: '54px',
-            borderRadius: '50%',
-            background: 'rgba(0, 229, 255, 0.12)',
-            display: 'flex',
-            alignItems: 'center',
+            background: '#ffffff',
+            padding: '1.5rem 1.25rem 1.25rem 1.25rem',
+            borderRadius: '24px',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.35)',
+            display: 'inline-flex',
             justifyContent: 'center',
-            margin: '0 auto 0.75rem auto',
-            color: 'var(--accent)'
+            alignItems: 'center',
+            margin: '0 auto 1rem auto',
+            width: '100%',
+            maxWidth: '280px'
           }}
         >
-          <MapPin size={28} />
+          <img
+            src="/logo-sa.png"
+            alt="StopAhead - Never Miss Your Stop"
+            style={{
+              width: '100%',
+              maxWidth: '220px',
+              height: 'auto',
+              objectFit: 'contain',
+              display: 'block'
+            }}
+          />
         </div>
-        <h2 style={{ fontSize: '1.8rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>
-          StopAhead
-        </h2>
-        <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+        <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
           {isSignUp ? 'Create your personal account' : 'Sign in to access your saved transit routes'}
         </p>
       </div>

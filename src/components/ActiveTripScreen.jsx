@@ -1,8 +1,8 @@
-// ActiveTripScreen.jsx - Active trip tracker with Leaflet OpenStreetMap rendering and loading/error states
 import React from 'react';
-import { Navigation, SkipForward, Bell, AlertCircle, RotateCcw, Compass, Loader2, MapPin, CheckCircle2 } from 'lucide-react';
+import { Navigation, SkipForward, Bell, AlertCircle, RotateCcw, Compass, Loader2, MapPin, CheckCircle2, ShieldAlert, Share2, Flag } from 'lucide-react';
 import { formatTimeRemaining } from '../utils/geoHelper';
 import LeafletMap from './LeafletMap';
+import { getTransitModeInfo } from './TransitModeSelector';
 
 export default function ActiveTripScreen({
   activeTrip,
@@ -18,7 +18,11 @@ export default function ActiveTripScreen({
   onEndTrip,
   onDismissAlarm,
   onNavigate,
-  onExpandFullScreen
+  onExpandFullScreen,
+  onOpenSOSModal,
+  onOpenShareModal,
+  onOpenDisruptionModal,
+  onOpenStopReportModal
 }) {
   // Console logging for active trip render state
   console.log('[StopAhead] Rendering ActiveTripScreen. Active trip state:', activeTrip);
@@ -47,6 +51,7 @@ export default function ActiveTripScreen({
   const {
     originStop,
     destinationStop,
+    transportMode = 'bus',
     currentStopIndex = 0,
     progressPercent = 0,
     stopsRemaining = 1,
@@ -57,6 +62,9 @@ export default function ActiveTripScreen({
     routeError = null,
     route
   } = activeTrip;
+
+  const modeInfo = getTransitModeInfo(transportMode);
+  const ModeIcon = modeInfo.icon;
 
   // Safe coordinates calculation
   const originLat = originStop?.lat || (destinationStop.lat - 0.015);
@@ -110,7 +118,7 @@ export default function ActiveTripScreen({
               }}
               id="btn-manual-stop-alarm"
             >
-              Stop Alarm
+              Dismiss Alarm
             </button>
           )}
         </div>
@@ -136,15 +144,30 @@ export default function ActiveTripScreen({
         </div>
       )}
 
-      {/* Main Destination Card */}
+      {/* Destination Card & Mode Badge */}
       <div className="quiet-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Destination Station
           </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-            <Compass size={12} />
-            <span>OpenStreetMap</span>
+          
+          {/* Mode Badge */}
+          <div
+            style={{
+              padding: '0.25rem 0.6rem',
+              borderRadius: 'var(--radius-full)',
+              background: 'rgba(2, 90, 237, 0.15)',
+              border: '1px solid var(--accent)',
+              color: 'var(--accent)',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <ModeIcon size={12} />
+            <span>{modeInfo.label} Mode</span>
           </div>
         </div>
 
@@ -312,6 +335,63 @@ export default function ActiveTripScreen({
             <span>Arrival</span>
           </button>
         </div>
+      </div>
+
+      {/* Safety & Community Action Toolbar */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+        <button
+          type="button"
+          onClick={onOpenSOSModal}
+          style={{
+            padding: '0.75rem',
+            borderRadius: 'var(--radius-md)',
+            background: 'rgba(255, 82, 82, 0.15)',
+            border: '1px solid rgba(255, 82, 82, 0.4)',
+            color: '#ff5252',
+            fontWeight: 800,
+            fontSize: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.4rem',
+            cursor: 'pointer'
+          }}
+          id="btn-active-sos"
+        >
+          <ShieldAlert size={16} />
+          <span>Emergency SOS</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={onOpenShareModal}
+          style={{ padding: '0.75rem', fontSize: '0.85rem', color: 'var(--accent)', borderColor: 'var(--accent)' }}
+          id="btn-active-share"
+        >
+          <Share2 size={16} />
+          <span>Share Trip</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={onOpenDisruptionModal}
+          style={{ padding: '0.65rem', fontSize: '0.8rem' }}
+        >
+          <AlertCircle size={15} />
+          <span>Report Delay</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={onOpenStopReportModal}
+          style={{ padding: '0.65rem', fontSize: '0.8rem' }}
+        >
+          <Flag size={15} />
+          <span>Flag Stop</span>
+        </button>
       </div>
 
       {/* End / Snooze Trip Actions */}

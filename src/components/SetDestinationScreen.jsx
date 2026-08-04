@@ -1,4 +1,3 @@
-// SetDestinationScreen.jsx - Real Live OpenStreetMap (Overpass + Nominatim + Leaflet) Destination Flow
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, Bookmark } from 'lucide-react';
 import { searchNominatimPlaces, fetchOverpassNearbyStops } from '../utils/osmService';
@@ -7,6 +6,7 @@ import LeafletMap from './LeafletMap';
 import LocationPermissionModal from './LocationPermissionModal';
 import CityOverrideModal from './CityOverrideModal';
 import LocationIndicatorChip from './LocationIndicatorChip';
+import TransitModeSelector from './TransitModeSelector';
 
 export default function SetDestinationScreen({
   onStartTrip,
@@ -16,6 +16,10 @@ export default function SetDestinationScreen({
   onUpdateUserLocation,
   onSaveRoute
 }) {
+  const [transportMode, setTransportMode] = useState(() => {
+    return localStorage.getItem('stopahead_last_transit_mode') || 'bus';
+  });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [osmSearchResults, setOsmSearchResults] = useState([]);
   const [nearbyStops, setNearbyStops] = useState([]);
@@ -32,6 +36,14 @@ export default function SetDestinationScreen({
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [showCityOverrideModal, setShowCityOverrideModal] = useState(false);
 
+  // Remember transit mode selection in LocalStorage
+  const handleSelectTransportMode = (modeId) => {
+    setTransportMode(modeId);
+    localStorage.setItem('stopahead_last_transit_mode', modeId);
+    setSelectedDestinationStop(null); // Reset selection to pick mode-matched stop
+    loadNearbyStops(2500, modeId);
+  };
+
   // Auto-prompt location explanation modal on initial mount if userLocation is null
   useEffect(() => {
     if (!userLocation) {
@@ -42,23 +54,23 @@ export default function SetDestinationScreen({
     }
   }, [userLocation]);
 
-  // Fetch real nearby transit stops via live OpenStreetMap Overpass API with auto-radius expansion
-  const loadNearbyStops = async (radiusMeters = 2500) => {
+  // Fetch real nearby transit stops via live OpenStreetMap Overpass API filtered by transportMode
+  const loadNearbyStops = async (radiusMeters = 2500, currentMode = transportMode) => {
     if (!userLocation?.lat || !userLocation?.lng) return;
 
     setIsLoadingNearby(true);
     try {
-      let stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, radiusMeters);
+      let stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, radiusMeters, currentMode);
 
       // Auto-expand to 6km if tight 2.5km returned 0 stops
       if (stops.length === 0 && radiusMeters <= 2500) {
-        stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, 6000);
+        stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, 6000, currentMode);
       }
 
       // If still 0, fallback to querying Nominatim for local transit places in city
       if (stops.length === 0) {
         const locationBias = { lat: userLocation.lat, lng: userLocation.lng, delta: 0.15, bounded: true };
-        const queryTerm = userLocation.cityName ? `${userLocation.cityName} station` : 'transit station';
+        const queryTerm = userLocation.cityName ? `${userLocation.cityName} ${currentMode} station` : `${currentMode} station`;
         const fallbackPlaces = await searchNominatimPlaces(queryTerm, locationBias);
         stops = fallbackPlaces.map((p) => ({
           id: p.id,
@@ -66,7 +78,8 @@ export default function SetDestinationScreen({
           description: p.description || 'OpenStreetMap Transit Node',
           lat: p.lat,
           lng: p.lng,
-          distKm: 1.5
+          distKm: 1.5,
+          transportMode: currentMode
         }));
       }
 
@@ -90,8 +103,8 @@ export default function SetDestinationScreen({
   };
 
   useEffect(() => {
-    loadNearbyStops(2500);
-  }, [userLocation?.lat, userLocation?.lng, userLocation?.cityName]);
+    loadNearbyStops(2500, transportMode);
+  }, [userLocation?.lat, userLocation?.lng, userLocation?.cityName, transportMode]);
 
   // Location-Aware Nominatim Search with Hard Bounding Box (bounded=1)
   useEffect(() => {
@@ -171,8 +184,8 @@ export default function SetDestinationScreen({
       lng: userLocation?.lng || (selectedDestinationStop.lng - 0.01)
     };
 
-    console.log('[StopAhead] Confirming trip start. Origin:', origin, 'Destination:', selectedDestinationStop);
-    onStartTrip(origin, selectedDestinationStop, thresholdType, thresholdValue, defaultSettings?.alertSound || 'chime');
+    console.log('[StopAhead] Confirming trip start. Origin:', origin, 'Destination:', selectedDestinationStop, 'Mode:', transportMode);
+    onStartTrip(origin, selectedDestinationStop, thresholdType, thresholdValue, defaultSettings?.alertSound || 'chime', transportMode);
   };
 
   return (
@@ -204,37 +217,24 @@ export default function SetDestinationScreen({
 
 
 
-      {/* Title & OpenStreetMap Badge */}
+      {/* Title */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-          <h2 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Set Destination</h2>
-          
-          <div
-            style={{
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              padding: '0.25rem 0.6rem',
-              borderRadius: 'var(--radius-sm)',
-              background: 'rgba(0, 229, 255, 0.12)',
-              color: 'var(--accent)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.3rem'
-            }}
-          >
-            <Compass size={12} />
-            <span>OpenStreetMap Overpass API</span>
-          </div>
-        </div>
+        <h2 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '0.2rem' }}>Set Destination</h2>
         <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
-          Real-time transit query via OpenStreetMap.
+          Select your target stop to configure proximity alerts.
         </p>
       </div>
 
-      {/* OpenStreetMap Interactive Leaflet Map Preview */}
+      {/* Step 1: Transit Mode Selection ("How are you traveling?") */}
+      <TransitModeSelector
+        selectedMode={transportMode}
+        onSelectMode={handleSelectTransportMode}
+      />
+
+      {/* Route Map Preview */}
       <div>
         <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
-          Leaflet Map Preview
+          Route Map Preview
         </div>
         <LeafletMap
           currentCoords={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : null}
@@ -245,10 +245,10 @@ export default function SetDestinationScreen({
         />
       </div>
 
-      {/* Step 2: Destination Stop (Live Overpass + Nominatim Search) */}
+      {/* Step 2: Destination Stop */}
       <div className="quiet-card">
         <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
-          Destination Stop (Live OSM Search)
+          Destination Stop
         </div>
 
         {/* Location Indicator Chip & Override Action */}
@@ -258,7 +258,7 @@ export default function SetDestinationScreen({
           onRequestPermission={() => setShowPermissionModal(true)}
         />
 
-        {/* Nominatim Search Input */}
+        {/* Search Input */}
         <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
           <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
           <input
@@ -266,7 +266,7 @@ export default function SetDestinationScreen({
             placeholder={
               userLocation?.cityName
                 ? `Search real stop near ${userLocation.cityName}...`
-                : "Search stop via OpenStreetMap..."
+                : "Search destination or stop..."
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -283,7 +283,7 @@ export default function SetDestinationScreen({
           />
         </div>
 
-        {/* Live Nominatim Search Results */}
+        {/* Live Search Results */}
         {osmSearchResults.length > 0 && (
           <div style={{ marginBottom: '1rem' }}>
             <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, marginBottom: '0.4rem' }}>
@@ -299,8 +299,8 @@ export default function SetDestinationScreen({
                     style={{
                       padding: '0.65rem 0.85rem',
                       borderRadius: 'var(--radius-md)',
-                      background: isSelected ? 'rgba(0, 229, 255, 0.15)' : 'rgba(0, 229, 255, 0.06)',
-                      border: isSelected ? '1px solid var(--accent)' : '1px solid rgba(0, 229, 255, 0.2)',
+                      background: isSelected ? 'rgba(2, 90, 237, 0.15)' : 'rgba(2, 90, 237, 0.06)',
+                      border: isSelected ? '1px solid var(--accent)' : '1px solid rgba(2, 90, 237, 0.2)',
                       cursor: 'pointer',
                       fontSize: '0.85rem',
                       display: 'flex',
@@ -320,17 +320,17 @@ export default function SetDestinationScreen({
           </div>
         )}
 
-        {/* Live Overpass API Detected Nearby Stops List */}
+        {/* Detected Nearby Stops List */}
         {!searchQuery && (
           <div>
             <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
               <Radio size={12} />
-              <span>OVERPASS API NEARBY STOPS ({nearbyStops.length} REAL NODES FOUND)</span>
+              <span>NEARBY STOPS ({nearbyStops.length} FOUND)</span>
             </div>
 
             {isLoadingNearby ? (
               <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                Querying live OpenStreetMap Overpass nodes...
+                Finding nearby stops...
               </div>
             ) : nearbyStops.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '200px', overflowY: 'auto' }}>
@@ -343,7 +343,7 @@ export default function SetDestinationScreen({
                       style={{
                         padding: '0.75rem 0.9rem',
                         borderRadius: 'var(--radius-md)',
-                        background: isSelected ? 'rgba(0, 229, 255, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                        background: isSelected ? 'rgba(2, 90, 237, 0.15)' : 'rgba(255, 255, 255, 0.03)',
                         border: isSelected ? '1px solid var(--accent)' : '1px solid var(--border-color)',
                         cursor: 'pointer',
                         display: 'flex',
@@ -371,7 +371,7 @@ export default function SetDestinationScreen({
                 })}
               </div>
             ) : (
-              /* Honest Empty State with Quick Helper Actions */
+              /* Empty State */
               <div
                 style={{
                   padding: '1.25rem 1rem',
@@ -383,10 +383,10 @@ export default function SetDestinationScreen({
               >
                 <AlertCircle size={22} color="var(--accent)" style={{ marginBottom: '0.4rem' }} />
                 <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
-                  No nearby stops tagged in immediate 2 km area
+                  No nearby stops found in immediate 2 km area
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
-                  OpenStreetMap data for {userLocation?.cityName || 'your area'} doesn't have tagged transit nodes within 2 km. Tap below to expand radius or search by landmark.
+                  No transit stops were detected near {userLocation?.cityName || 'your location'} within 2 km. Tap below to expand radius or search by station name.
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -459,7 +459,8 @@ export default function SetDestinationScreen({
                     destinationStop: selectedDestinationStop,
                     originStop: selectedOriginStop,
                     thresholdType,
-                    thresholdValue
+                    thresholdValue,
+                    transportMode
                   });
                 }}
                 style={{
