@@ -53,7 +53,7 @@ export default function App() {
       alertSound: 'chime',
       defaultThresholdType: 'stops',
       defaultThresholdValue: 2,
-      themeMode: 'dark',
+      themeMode: 'light',
       isHighContrast: false,
       fontSizeScale: 'standard',
       gpsMode: 'simulated',
@@ -107,12 +107,14 @@ export default function App() {
     }
   }, [user?.id]);
 
-  // Save settings to LocalStorage
+  // Save settings to LocalStorage & update theme classes
   useEffect(() => {
     localStorage.setItem('stopahead_settings', JSON.stringify(settings));
 
     document.body.className = '';
-    if (settings.themeMode === 'light') document.body.classList.add('light-theme');
+    if (settings.themeMode === 'dark') document.body.classList.add('dark-theme');
+    else document.body.classList.add('light-theme');
+
     if (settings.isHighContrast) document.body.classList.add('high-contrast');
     if (settings.fontSizeScale === 'large') document.body.classList.add('font-large');
     if (settings.fontSizeScale === 'xl') document.body.classList.add('font-xl');

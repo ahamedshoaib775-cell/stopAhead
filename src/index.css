@@ -1,21 +1,21 @@
 /* index.css - StopAhead: Minimal & Calm Design System */
 
 :root {
-  /* Quiet Neutral Dark Theme */
-  --bg-primary: #0b0e14;
-  --bg-surface: #0f141f;
-  --bg-card: #151c28;
-  --bg-card-hover: #1c2536;
-  --border-color: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(2, 90, 237, 0.4);
-  
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
-  
+  /* Quiet Neutral Light Theme (DEFAULT) */
+  --bg-primary: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-card: #f1f5f9;
+  --bg-card-hover: #e2e8f0;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-active: rgba(2, 90, 237, 0.5);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
   /* OFFICIAL STOPAHEAD LOGO CORE COLOR PALETTE */
   --accent: #025AED;               /* Logo Blue Pin */
-  --accent-glow: rgba(2, 90, 237, 0.3);
+  --accent-glow: rgba(2, 90, 237, 0.2);
   --accent-text: #ffffff;
 
   --color-success: #16A34A;        /* Logo Signal Green Wave */
@@ -31,37 +31,58 @@
   --radius-xl: 28px;
   --radius-full: 9999px;
 
-  --shadow-subtle: 0 8px 30px rgba(0, 0, 0, 0.25);
+  --shadow-subtle: 0 8px 30px rgba(0, 0, 0, 0.08);
   --shadow-accent: 0 4px 20px var(--accent-glow);
   
   --app-max-width: 440px;
   --font-scale: 1;
 }
 
-/* Light Mode Overrides */
+/* Explicit Light Theme */
 body.light-theme {
   --bg-primary: #f8fafc;
   --bg-surface: #ffffff;
   --bg-card: #f1f5f9;
   --bg-card-hover: #e2e8f0;
-  --border-color: rgba(0, 0, 0, 0.06);
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-active: rgba(2, 90, 237, 0.5);
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-muted: #64748b;
 
-  --accent: #0284c7;
+  --accent: #025AED;
   --accent-text: #ffffff;
-  --accent-glow: rgba(2, 132, 199, 0.2);
+  --accent-glow: rgba(2, 90, 237, 0.2);
+}
+
+/* Dark Theme Overrides */
+body.dark-theme {
+  --bg-primary: #0b0e14;
+  --bg-surface: #0f141f;
+  --bg-card: #151c28;
+  --bg-card-hover: #1c2536;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-active: rgba(2, 90, 237, 0.4);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --accent: #025AED;
+  --accent-text: #ffffff;
+  --accent-glow: rgba(2, 90, 237, 0.3);
 }
 
 /* High Contrast Mode Overrides */
 body.high-contrast {
-  --bg-primary: #000000;
-  --bg-surface: #050505;
-  --bg-card: #121212;
-  --border-color: #ffffff;
-  --accent: #00ffff;
+  --bg-primary: #ffffff;
+  --bg-surface: #ffffff;
+  --bg-card: #f8fafc;
+  --border-color: #000000;
+  --text-primary: #000000;
+  --text-secondary: #000000;
+  --accent: #025AED;
 }
 
 body.font-large { --font-scale: 1.12; }

@@ -31,7 +31,7 @@ export default function LeafletMap({
   heading = 0,
   stops = [],
   height = '200px',
-  tileStyle = 'dark',
+  tileStyle = 'standard',
   interactive = true,
   onExpandFullScreen
 }) {
