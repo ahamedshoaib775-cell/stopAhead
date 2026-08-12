@@ -1,4 +1,4 @@
-// LeafletMap.jsx - Premium Dark-Themed Map Engine with Polyline Snapping & Branded Markers
+// LeafletMap.jsx - Premium Dark-Themed Map Engine with Mode-Specific Markers & Polyline Snapping
 import React, { useEffect, useRef, useState } from 'react';
 import { Plus, Minus, LocateFixed, AlertTriangle } from 'lucide-react';
 import { snapPointToPolyline } from '../utils/geoHelper';
@@ -32,6 +32,7 @@ export default function LeafletMap({
   heading = 0,
   stops = [],
   routeCoordinates = null,
+  transportMode = 'bus',
   height = '200px',
   tileStyle = 'dark',
   interactive = true,
@@ -65,17 +66,51 @@ export default function LeafletMap({
     });
   };
 
-  // Helper to create User Position Navigation Marker with live heading rotation & smooth CSS transitions
-  const createUserPositionIcon = (deg = 0) => {
+  // Helper to create Mode-Specific User Position Navigation Marker (Bus, Metro, Train)
+  const createUserPositionIcon = (deg = 0, mode = 'bus') => {
     if (!window.L) return null;
+
+    let iconSvgContent = `
+      <circle cx="12" cy="12" r="10" fill="rgba(2, 90, 237, 0.35)" stroke="#025AED" stroke-width="2"/>
+      <path d="M12 3L17.5 19L12 15.5L6.5 19L12 3Z" fill="#025AED" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+    `;
+
+    if (mode === 'bus') {
+      iconSvgContent = `
+        <circle cx="12" cy="12" r="11" fill="rgba(2, 90, 237, 0.4)" stroke="#025AED" stroke-width="2"/>
+        <rect x="7" y="6" width="10" height="12" rx="2" fill="#025AED" stroke="#ffffff" stroke-width="1"/>
+        <rect x="8.5" y="8" width="7" height="4" rx="1" fill="#ffffff"/>
+        <circle cx="9.5" cy="15" r="1" fill="#ffffff"/>
+        <circle cx="14.5" cy="15" r="1" fill="#ffffff"/>
+        <path d="M12 2L15 5H9L12 2Z" fill="#00e5ff"/>
+      `;
+    } else if (mode === 'metro' || mode === 'subway') {
+      iconSvgContent = `
+        <circle cx="12" cy="12" r="11" fill="rgba(0, 229, 255, 0.35)" stroke="#00e5ff" stroke-width="2"/>
+        <path d="M7 8C7 6.5 9 5 12 5C15 5 17 6.5 17 8V15C17 16 16 17 14.5 17H9.5C8 17 7 16 7 15V8Z" fill="#025AED" stroke="#ffffff" stroke-width="1"/>
+        <rect x="8.5" y="7.5" width="7" height="4" rx="1" fill="#ffffff"/>
+        <circle cx="9.5" cy="14" r="1" fill="#00e5ff"/>
+        <circle cx="14.5" cy="14" r="1" fill="#00e5ff"/>
+        <path d="M12 2L15 5H9L12 2Z" fill="#00e5ff"/>
+      `;
+    } else if (mode === 'train') {
+      iconSvgContent = `
+        <circle cx="12" cy="12" r="11" fill="rgba(255, 184, 0, 0.35)" stroke="#ffb800" stroke-width="2"/>
+        <rect x="7" y="6" width="10" height="12" rx="2" fill="#1e293b" stroke="#ffb800" stroke-width="1.5"/>
+        <rect x="8.5" y="8" width="7" height="4" rx="1" fill="#ffb800"/>
+        <circle cx="9.5" cy="15" r="1" fill="#ffffff"/>
+        <circle cx="14.5" cy="15" r="1" fill="#ffffff"/>
+        <path d="M12 2L15 5H9L12 2Z" fill="#ffb800"/>
+      `;
+    }
+
     return window.L.divIcon({
-      className: 'stopahead-user-marker',
+      className: `stopahead-user-marker mode-${mode}`,
       html: `
         <div style="transform: rotate(${deg}deg); transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1); width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 14px rgba(2, 90, 237, 0.85));">
           <div style="position: absolute; width: 34px; height: 34px; border-radius: 50%; background: rgba(2, 90, 237, 0.25); animation: pulse-ring 2s infinite ease-in-out;"></div>
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="10" fill="rgba(2, 90, 237, 0.35)" stroke="#025AED" stroke-width="2"/>
-            <path d="M12 3L17.5 19L12 15.5L6.5 19L12 3Z" fill="#025AED" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            ${iconSvgContent}
           </svg>
         </div>
       `,
@@ -167,7 +202,7 @@ export default function LeafletMap({
         } else {
           const dot = window.L.circleMarker([stop.lat, stop.lng], {
             radius: isOrigin ? 6 : 4,
-            fillColor: isOrigin ? '#ffffff' : 'rgba(255, 255, 255, 0.75)',
+            fillColor: isOrigin ? '#ffffff' : (transportMode === 'metro' ? '#00e5ff' : 'rgba(255, 255, 255, 0.75)'),
             color: '#025AED',
             weight: 1.5,
             opacity: 0.9,
@@ -207,9 +242,9 @@ export default function LeafletMap({
       setWeakGpsInfo(null);
     }
 
-    // Live User Position Navigation Marker with Smooth Animation
+    // Live User Position Navigation Marker with Mode-Specific Icon
     if (displayPos) {
-      const userIcon = createUserPositionIcon(displayHeading);
+      const userIcon = createUserPositionIcon(displayHeading, transportMode);
       if (!userMarkerRef.current) {
         const marker = window.L.marker(displayPos, { icon: userIcon }).addTo(map);
         marker.bindTooltip('Your Location', { permanent: false, direction: 'bottom' });
@@ -222,8 +257,10 @@ export default function LeafletMap({
 
     // Render Route Line with Outer Glow
     if (routeLatLngs.length > 1) {
+      const strokeColor = transportMode === 'metro' ? '#00e5ff' : transportMode === 'train' ? '#ffb800' : '#025AED';
+
       routeGlowPolylineRef.current = window.L.polyline(routeLatLngs, {
-        color: '#025AED',
+        color: strokeColor,
         weight: 9,
         opacity: 0.3,
         lineCap: 'round',
@@ -231,7 +268,7 @@ export default function LeafletMap({
       }).addTo(map);
 
       routePolylineRef.current = window.L.polyline(routeLatLngs, {
-        color: '#025AED',
+        color: strokeColor,
         weight: 4.5,
         opacity: 0.95,
         lineCap: 'round',
@@ -243,7 +280,7 @@ export default function LeafletMap({
         map.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
       } catch (e) {}
     }
-  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, tileStyle]);
+  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, tileStyle]);
 
   // Zoom control handlers
   const handleZoomIn = (e) => {

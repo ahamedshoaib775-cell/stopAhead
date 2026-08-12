@@ -264,6 +264,7 @@ export default function SetDestinationScreen({
           originCoords={selectedOriginStop ? [selectedOriginStop.lat, selectedOriginStop.lng] : null}
           destCoords={selectedDestinationStop ? [selectedDestinationStop.lat, selectedDestinationStop.lng] : null}
           stops={nearbyStops}
+          transportMode={transportMode}
           height="170px"
         />
       </div>

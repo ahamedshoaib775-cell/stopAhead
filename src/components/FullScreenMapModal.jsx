@@ -212,6 +212,7 @@ export default function FullScreenMapModal({
           heading={activeHeading}
           stops={mapStops}
           routeCoordinates={route?.coordinates}
+          transportMode={activeTrip?.transportMode || 'bus'}
           height="100vh"
           tileStyle={tileStyle}
         />
