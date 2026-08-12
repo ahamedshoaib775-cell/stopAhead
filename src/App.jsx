@@ -784,6 +784,8 @@ export default function App() {
       <ChatbotModal
         isOpen={isChatbotOpen}
         onClose={() => setIsChatbotOpen(false)}
+        onStartTrip={startTrip}
+        onNavigate={setActiveTab}
         appContext={{
           userPosition,
           userLocation,

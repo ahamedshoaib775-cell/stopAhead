@@ -1,14 +1,14 @@
-// ChatbotModal.jsx - Sleek Floating AI Assistant Drawer for StopAhead
+// ChatbotModal.jsx - Light-Theme Conversational AI Trip-Planner Assistant Drawer
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Bot, User, Sparkles, Navigation, Clock, Bell, Radio } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, Radio, Bus, Train, TrainFront, TrainTrack, Rocket, Navigation, ArrowRight } from 'lucide-react';
 import { processAssistantQuery } from '../utils/assistantService';
 
-export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
+export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStartTrip, onNavigate }) {
   const [messages, setMessages] = useState([
     {
       id: 'init-1',
       sender: 'bot',
-      text: "👋 Hi! I'm StopAhead AI. Ask me anything about live distances, ETAs, or stops near your location!"
+      text: "👋 Hi! I'm StopAhead AI Trip Planner. Ask me 'How do I get to Phoenix Mall?' or 'How far is Anna Nagar?' to get live data-backed transit recommendations!"
     }
   ]);
 
@@ -30,6 +30,19 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
 
   if (!isOpen) return null;
 
+  const getModeIcon = (mode) => {
+    switch (mode) {
+      case 'metro':
+        return TrainFront;
+      case 'train':
+      case 'local_train':
+        return TrainTrack;
+      case 'bus':
+      default:
+        return Bus;
+    }
+  };
+
   const handleSend = async (queryText = inputQuery) => {
     const cleanText = (queryText || '').trim();
     if (!cleanText || isProcessing) return;
@@ -45,12 +58,24 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
     setIsProcessing(true);
 
     try {
-      const responseText = await processAssistantQuery(cleanText, appContext);
-      const botMsg = {
-        id: `bot-${Date.now()}`,
-        sender: 'bot',
-        text: responseText
-      };
+      const res = await processAssistantQuery(cleanText, appContext);
+      let botMsg = {};
+
+      if (typeof res === 'object' && res !== null) {
+        botMsg = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          text: res.responseText || res.text || '',
+          data: res.isTripRecommendation ? res : null
+        };
+      } else {
+        botMsg = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          text: res
+        };
+      }
+
       setMessages((prev) => [...prev, botMsg]);
     } catch (e) {
       setMessages((prev) => [
@@ -58,7 +83,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
         {
           id: `bot-err-${Date.now()}`,
           sender: 'bot',
-          text: "Sorry, I had trouble retrieving that live location data. Please try again!"
+          text: "Sorry, I had trouble planning that route with live transit data. Please try again!"
         }
       ]);
     } finally {
@@ -67,10 +92,10 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
   };
 
   const quickPrompts = [
+    { label: '🗺️ How do I get to Phoenix Mall?', query: 'How do I get to Phoenix Mall?' },
     { label: '📍 Distance to nearest stop?', query: 'How far is the nearest stop from my location?' },
     { label: "⏱️ What's my ETA?", query: "What's my ETA?" },
-    { label: '🔔 When will my alarm trigger?', query: 'How long until my alarm goes off?' },
-    { label: '🚌 How many stops remaining?', query: 'How many stops until my destination?' }
+    { label: '🔔 When will my alarm trigger?', query: 'How long until my alarm goes off?' }
   ];
 
   return (
@@ -79,7 +104,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        background: 'rgba(0, 0, 0, 0.65)',
+        background: 'rgba(15, 23, 42, 0.65)',
         backdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'flex-end',
@@ -92,52 +117,53 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
         style={{
           width: '100%',
           maxWidth: '480px',
-          height: '82vh',
-          background: 'var(--surface-color, #0f141f)',
+          height: '84vh',
+          background: '#ffffff',
           borderTopLeftRadius: '24px',
           borderTopRightRadius: '24px',
-          border: '1px solid var(--border-color, rgba(2, 90, 237, 0.3))',
-          boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.7)',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.25)',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
         }}
       >
-        {/* Header Bar */}
+        {/* Light Header Bar */}
         <div
           style={{
             padding: '1rem 1.25rem',
-            background: 'rgba(2, 90, 237, 0.12)',
-            borderBottom: '1px solid rgba(2, 90, 237, 0.25)',
+            background: '#f8fafc',
+            borderBottom: '1px solid #e2e8f0',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <div
               style={{
                 width: '36px',
                 height: '36px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #025AED, #00e5ff)',
+                borderRadius: '12px',
+                background: '#025AED',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#fff',
-                boxShadow: '0 4px 12px rgba(2, 90, 237, 0.4)'
+                color: '#ffffff',
+                boxShadow: '0 4px 14px rgba(2, 90, 237, 0.35)'
               }}
             >
               <Bot size={20} />
             </div>
 
             <div>
-              <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>
-                StopAhead Assistant
+              <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0f172a' }}>
+                StopAhead AI Assistant
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                <Radio size={10} color="var(--accent)" />
-                <span>Live GPS Active ({userLocation?.cityName || 'Detected Loc'})</span>
+              <div style={{ fontSize: '0.72rem', color: '#025AED', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <Radio size={10} color="#025AED" />
+                <span>Live GPS Active ({userLocation?.cityName || 'Detected City'})</span>
               </div>
             </div>
           </div>
@@ -149,9 +175,9 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
               width: '32px',
               height: '32px',
               borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.08)',
+              background: '#e2e8f0',
               border: 'none',
-              color: 'var(--text-primary)',
+              color: '#475569',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -165,11 +191,11 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
         {/* Quick Suggestion Chips */}
         <div
           style={{
-            padding: '0.6rem 1rem',
-            background: 'rgba(0, 0, 0, 0.2)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+            padding: '0.65rem 1rem',
+            background: '#ffffff',
+            borderBottom: '1px solid #f1f5f9',
             display: 'flex',
-            gap: '0.4rem',
+            gap: '0.45rem',
             overflowX: 'auto',
             whiteSpace: 'nowrap'
           }}
@@ -180,12 +206,12 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
               type="button"
               onClick={() => handleSend(chip.query)}
               style={{
-                padding: '0.35rem 0.65rem',
-                borderRadius: 'var(--radius-full, 999px)',
-                background: 'rgba(2, 90, 237, 0.12)',
-                border: '1px solid rgba(2, 90, 237, 0.3)',
-                color: 'var(--text-primary)',
-                fontSize: '0.74rem',
+                padding: '0.4rem 0.75rem',
+                borderRadius: '999px',
+                background: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                color: '#1e293b',
+                fontSize: '0.76rem',
                 fontWeight: 600,
                 cursor: 'pointer',
                 flexShrink: 0
@@ -201,6 +227,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
           style={{
             flex: 1,
             padding: '1rem',
+            background: '#f8fafc',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
@@ -209,6 +236,9 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
         >
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
+            const tripData = msg.data;
+            const ModeIcon = tripData ? getModeIcon(tripData.recommendedMode) : Bus;
+
             return (
               <div
                 key={msg.id}
@@ -216,7 +246,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
                   display: 'flex',
                   justifyContent: isUser ? 'flex-end' : 'flex-start',
                   alignItems: 'flex-start',
-                  gap: '0.5rem'
+                  gap: '0.55rem'
                 }}
               >
                 {!isUser && (
@@ -225,12 +255,12 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
                       width: '28px',
                       height: '28px',
                       borderRadius: '50%',
-                      background: 'rgba(2, 90, 237, 0.2)',
-                      border: '1px solid var(--accent)',
+                      background: 'rgba(2, 90, 237, 0.1)',
+                      border: '1px solid #025AED',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: 'var(--accent)',
+                      color: '#025AED',
                       flexShrink: 0,
                       marginTop: '2px'
                     }}
@@ -241,41 +271,120 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
 
                 <div
                   style={{
-                    maxWidth: '82%',
-                    padding: '0.75rem 0.95rem',
-                    borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                    background: isUser ? 'var(--accent, #025AED)' : 'rgba(255, 255, 255, 0.08)',
-                    color: isUser ? '#ffffff' : 'var(--text-primary)',
-                    fontSize: '0.86rem',
-                    lineHeight: 1.45,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                    maxWidth: '84%',
+                    padding: '0.8rem 1rem',
+                    borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                    background: isUser ? '#025AED' : '#ffffff',
+                    color: isUser ? '#ffffff' : '#0f172a',
+                    border: isUser ? 'none' : '1px solid #e2e8f0',
+                    fontSize: '0.88rem',
+                    lineHeight: 1.5,
+                    boxShadow: isUser ? '0 4px 14px rgba(2, 90, 237, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.05)'
                   }}
                 >
-                  {msg.text}
+                  {/* Inline Mode Icon for Trip Recommendations */}
+                  {tripData && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        fontWeight: 800,
+                        fontSize: '0.9rem',
+                        color: '#025AED',
+                        marginBottom: '0.4rem'
+                      }}
+                    >
+                      <ModeIcon size={18} color="#025AED" />
+                      <span>Recommended: {tripData.recommendedModeLabel}</span>
+                    </div>
+                  )}
+
+                  <div>{msg.text}</div>
+
+                  {/* One-Tap Start Trip Card */}
+                  {tripData && onStartTrip && (
+                    <div
+                      style={{
+                        marginTop: '0.75rem',
+                        padding: '0.75rem',
+                        borderRadius: '12px',
+                        background: '#f1f5f9',
+                        border: '1px solid #cbd5e1'
+                      }}
+                    >
+                      <div style={{ fontSize: '0.76rem', color: '#475569', fontWeight: 700, marginBottom: '0.35rem' }}>
+                        JOURNEY BREAKDOWN
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#0f172a', fontWeight: 600 }}>
+                        📍 {tripData.originStop?.name} → {tripData.destinationStop?.name}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                        {tripData.stopsCount} stops • ~{tripData.transitMins} min transit • {tripData.walkMins} min walk
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onStartTrip(
+                            tripData.originStop,
+                            tripData.destinationStop,
+                            'stops',
+                            2,
+                            null,
+                            tripData.recommendedMode
+                          );
+                          onNavigate && onNavigate('active-trip');
+                          onClose && onClose();
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '0.65rem',
+                          marginTop: '0.6rem',
+                          borderRadius: '10px',
+                          background: '#025AED',
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          fontSize: '0.82rem',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.4rem',
+                          boxShadow: '0 4px 12px rgba(2, 90, 237, 0.35)'
+                        }}
+                        id="btn-start-trip-from-chat"
+                      >
+                        <Rocket size={15} />
+                        <span>Start this trip now</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
 
           {isProcessing && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
               <div
                 style={{
                   width: '28px',
                   height: '28px',
                   borderRadius: '50%',
-                  background: 'rgba(2, 90, 237, 0.2)',
-                  border: '1px solid var(--accent)',
+                  background: 'rgba(2, 90, 237, 0.1)',
+                  border: '1px solid #025AED',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'var(--accent)'
+                  color: '#025AED'
                 }}
               >
                 <Bot size={14} />
               </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Checking live GPS location & telemetry...
+              <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic' }}>
+                Analyzing transit options & calculating route...
               </div>
             </div>
           )}
@@ -290,8 +399,8 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
           }}
           style={{
             padding: '0.85rem 1rem',
-            background: 'rgba(0, 0, 0, 0.4)',
-            borderTop: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
+            background: '#ffffff',
+            borderTop: '1px solid #e2e8f0',
             display: 'flex',
             gap: '0.5rem',
             alignItems: 'center'
@@ -301,15 +410,15 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
             type="text"
             value={inputQuery}
             onChange={(e) => setInputQuery(e.target.value)}
-            placeholder="Ask about distances, ETAs, or stops..."
+            placeholder="Ask 'How do I get to Phoenix Mall?'..."
             disabled={isProcessing}
             style={{
               flex: 1,
-              padding: '0.7rem 0.95rem',
-              borderRadius: 'var(--radius-md, 12px)',
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: 'var(--text-primary)',
+              padding: '0.75rem 1rem',
+              borderRadius: '12px',
+              background: '#f1f5f9',
+              border: '1px solid #cbd5e1',
+              color: '#0f172a',
               fontSize: '0.88rem',
               outline: 'none'
             }}
@@ -320,16 +429,18 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {} }) {
             style={{
               width: '42px',
               height: '42px',
-              borderRadius: 'var(--radius-md, 12px)',
-              background: inputQuery.trim() ? 'var(--accent, #025AED)' : 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '12px',
+              background: inputQuery.trim() ? '#025AED' : '#e2e8f0',
               border: 'none',
-              color: '#ffffff',
+              color: inputQuery.trim() ? '#ffffff' : '#94a3b8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: inputQuery.trim() ? 'pointer' : 'not-allowed',
-              transition: 'background 0.2s ease'
+              transition: 'all 0.2s ease',
+              boxShadow: inputQuery.trim() ? '0 4px 12px rgba(2, 90, 237, 0.3)' : 'none'
             }}
+            id="btn-send-chat"
           >
             <Send size={18} />
           </button>
