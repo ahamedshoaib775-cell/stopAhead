@@ -1,6 +1,7 @@
-// LeafletMap.jsx - Premium Dark-Themed Map Engine with Branded StopAhead Markers & Navigation Polyline
-import React, { useEffect, useRef } from 'react';
-import { Plus, Minus, LocateFixed } from 'lucide-react';
+// LeafletMap.jsx - Premium Dark-Themed Map Engine with Polyline Snapping & Branded Markers
+import React, { useEffect, useRef, useState } from 'react';
+import { Plus, Minus, LocateFixed, AlertTriangle } from 'lucide-react';
+import { snapPointToPolyline } from '../utils/geoHelper';
 
 const TILE_URLS = {
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -30,6 +31,7 @@ export default function LeafletMap({
   currentCoords,
   heading = 0,
   stops = [],
+  routeCoordinates = null,
   height = '200px',
   tileStyle = 'dark',
   interactive = true,
@@ -43,6 +45,8 @@ export default function LeafletMap({
   const stopMarkersRef = useRef([]);
   const routePolylineRef = useRef(null);
   const routeGlowPolylineRef = useRef(null);
+
+  const [weakGpsInfo, setWeakGpsInfo] = useState(null);
 
   // Helper to create StopAhead Branded Destination Marker using /logo-icon.png
   const createDestinationIcon = () => {
@@ -61,13 +65,13 @@ export default function LeafletMap({
     });
   };
 
-  // Helper to create User Position Navigation Marker with live heading rotation
+  // Helper to create User Position Navigation Marker with live heading rotation & smooth CSS transitions
   const createUserPositionIcon = (deg = 0) => {
     if (!window.L) return null;
     return window.L.divIcon({
       className: 'stopahead-user-marker',
       html: `
-        <div style="transform: rotate(${deg}deg); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 14px rgba(2, 90, 237, 0.85));">
+        <div style="transform: rotate(${deg}deg); transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1); width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 14px rgba(2, 90, 237, 0.85));">
           <div style="position: absolute; width: 34px; height: 34px; border-radius: 50%; background: rgba(2, 90, 237, 0.25); animation: pulse-ring 2s infinite ease-in-out;"></div>
           <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="12" cy="12" r="10" fill="rgba(2, 90, 237, 0.35)" stroke="#025AED" stroke-width="2"/>
@@ -100,8 +104,6 @@ export default function LeafletMap({
 
       tileLayerRef.current = window.L.tileLayer(tileUrl, opts).addTo(map);
       mapInstanceRef.current = map;
-    } else if (mapInstanceRef.current && targetCenter) {
-      mapInstanceRef.current.panTo(targetCenter, { animate: true, duration: 0.5 });
     }
 
     const map = mapInstanceRef.current;
@@ -136,6 +138,18 @@ export default function LeafletMap({
 
     const routeLatLngs = [];
 
+    // Construct full polyline array
+    if (routeCoordinates && routeCoordinates.length > 0) {
+      routeCoordinates.forEach((pt) => routeLatLngs.push(pt));
+    } else if (stops && stops.length > 0) {
+      stops.forEach((stop) => {
+        if (stop.lat && stop.lng) routeLatLngs.push([stop.lat, stop.lng]);
+      });
+    } else if (originCoords && destCoords) {
+      routeLatLngs.push(originCoords);
+      routeLatLngs.push(destCoords);
+    }
+
     // Render Intermediate Stop Dots
     if (stops && stops.length > 0) {
       stops.forEach((stop, idx) => {
@@ -143,10 +157,7 @@ export default function LeafletMap({
         const isDest = idx === stops.length - 1;
         const isOrigin = idx === 0;
 
-        routeLatLngs.push([stop.lat, stop.lng]);
-
         if (isDest) {
-          // Dedicated Branded Destination Pin Icon
           const destIcon = createDestinationIcon();
           if (destIcon) {
             const marker = window.L.marker([stop.lat, stop.lng], { icon: destIcon }).addTo(map);
@@ -154,7 +165,6 @@ export default function LeafletMap({
             destMarkerRef.current = marker;
           }
         } else {
-          // Minimal small circle dot marker for non-destination stops
           const dot = window.L.circleMarker([stop.lat, stop.lng], {
             radius: isOrigin ? 6 : 4,
             fillColor: isOrigin ? '#ffffff' : 'rgba(255, 255, 255, 0.75)',
@@ -169,7 +179,6 @@ export default function LeafletMap({
         }
       });
     } else if (destCoords) {
-      routeLatLngs.push(destCoords);
       const destIcon = createDestinationIcon();
       if (destIcon) {
         const marker = window.L.marker(destCoords, { icon: destIcon }).addTo(map);
@@ -178,28 +187,41 @@ export default function LeafletMap({
       }
     }
 
-    if (currentCoords) {
-      if (!routeLatLngs.some((pt) => pt[0] === currentCoords[0] && pt[1] === currentCoords[1])) {
-        routeLatLngs.unshift(currentCoords);
+    // Snapping Live Position Marker to Route Polyline
+    let displayPos = currentCoords;
+    let displayHeading = heading;
+
+    if (currentCoords && routeLatLngs.length > 1) {
+      const snapResult = snapPointToPolyline(currentCoords[0], currentCoords[1], routeLatLngs);
+      displayPos = [snapResult.snappedLat, snapResult.snappedLng];
+      if (snapResult.headingDeg != null && !isNaN(snapResult.headingDeg)) {
+        displayHeading = snapResult.headingDeg;
       }
+
+      if (snapResult.isWeakGps) {
+        setWeakGpsInfo({ distanceMeters: snapResult.distanceMeters });
+      } else {
+        setWeakGpsInfo(null);
+      }
+    } else {
+      setWeakGpsInfo(null);
     }
 
-    // Live User Position Navigation Icon
-    if (currentCoords) {
-      const userIcon = createUserPositionIcon(heading);
+    // Live User Position Navigation Marker with Smooth Animation
+    if (displayPos) {
+      const userIcon = createUserPositionIcon(displayHeading);
       if (!userMarkerRef.current) {
-        const marker = window.L.marker(currentCoords, { icon: userIcon }).addTo(map);
+        const marker = window.L.marker(displayPos, { icon: userIcon }).addTo(map);
         marker.bindTooltip('Your Location', { permanent: false, direction: 'bottom' });
         userMarkerRef.current = marker;
       } else {
-        userMarkerRef.current.setLatLng(currentCoords);
+        userMarkerRef.current.setLatLng(displayPos);
         if (userIcon) userMarkerRef.current.setIcon(userIcon);
       }
     }
 
-    // Render Premium Route Line with Outer Glow
+    // Render Route Line with Outer Glow
     if (routeLatLngs.length > 1) {
-      // Glow underlayer
       routeGlowPolylineRef.current = window.L.polyline(routeLatLngs, {
         color: '#025AED',
         weight: 9,
@@ -208,7 +230,6 @@ export default function LeafletMap({
         lineJoin: 'round'
       }).addTo(map);
 
-      // Core route path
       routePolylineRef.current = window.L.polyline(routeLatLngs, {
         color: '#025AED',
         weight: 4.5,
@@ -217,13 +238,12 @@ export default function LeafletMap({
         lineJoin: 'round'
       }).addTo(map);
 
-      // Auto fit bounds smoothly when multiple points exist
       try {
         const bounds = window.L.latLngBounds(routeLatLngs);
         map.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
       } catch (e) {}
     }
-  }, [originCoords, destCoords, currentCoords, heading, stops, tileStyle]);
+  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, tileStyle]);
 
   // Zoom control handlers
   const handleZoomIn = (e) => {
@@ -259,6 +279,33 @@ export default function LeafletMap({
         position: 'relative'
       }}
     >
+      {/* Weak GPS Signal Indicator Overlay */}
+      {weakGpsInfo && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '0.85rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 450,
+            background: 'rgba(255, 184, 0, 0.92)',
+            backdropFilter: 'blur(8px)',
+            color: '#000',
+            padding: '0.35rem 0.75rem',
+            borderRadius: 'var(--radius-full)',
+            fontSize: '0.75rem',
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.5)'
+          }}
+        >
+          <AlertTriangle size={13} color="#000" />
+          <span>Weak GPS Signal ({weakGpsInfo.distanceMeters}m off route — snapped to road)</span>
+        </div>
+      )}
+
       {/* Custom Sleek Dark Floating Zoom & Recenter Controls */}
       {interactive && (
         <div

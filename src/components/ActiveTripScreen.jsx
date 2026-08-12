@@ -239,6 +239,7 @@ export default function ActiveTripScreen({
           currentCoords={currentCoords}
           heading={activeHeading}
           stops={mapStops}
+          routeCoordinates={route?.coordinates}
           height="190px"
           onExpandFullScreen={onExpandFullScreen}
         />

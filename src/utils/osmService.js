@@ -2,7 +2,8 @@
 
 /**
  * Nominatim Free Geocoding Search (OpenStreetMap)
- * Restricted to location search bias with hard bounding box support
+ * Searches across ALL OSM place types (shops, malls, landmarks, addresses, businesses)
+ * Biased/restricted to user's current city/area using viewbox + bounded=1
  */
 export async function searchNominatimPlaces(query, locationBias = null) {
   if (!query || query.trim().length < 2) return [];
@@ -11,7 +12,7 @@ export async function searchNominatimPlaces(query, locationBias = null) {
     let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1`;
 
     if (locationBias && locationBias.lat && locationBias.lng) {
-      const delta = locationBias.delta || 0.12; // ~12 km bounding box
+      const delta = locationBias.delta || 0.15; // ~15 km bounding box around user's live coordinates
       const minLng = locationBias.lng - delta;
       const maxLng = locationBias.lng + delta;
       const minLat = locationBias.lat - delta;
@@ -43,11 +44,13 @@ export async function searchNominatimPlaces(query, locationBias = null) {
       return {
         id: item.place_id ? String(item.place_id) : `osm-${item.lat}-${item.lon}`,
         name: mainName,
-        description: details || item.type || 'OpenStreetMap Location',
+        description: details || item.type || 'OpenStreetMap Place',
         code: mainName.slice(0, 3).toUpperCase(),
         lat: parseFloat(item.lat),
         lng: parseFloat(item.lon),
-        isOsm: true
+        type: item.type || item.class || 'place',
+        isOsm: true,
+        isPlace: true
       };
     });
   } catch (err) {
@@ -139,6 +142,32 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2500, tr
   } catch (err) {
     console.warn('Overpass API error, falling back to Nominatim:', err.message);
     return [];
+  }
+}
+
+/**
+ * Automatically fetch the nearest transit stop to a given target coordinate (e.g. store, mall, landmark)
+ */
+export async function fetchNearestTransitStopToPoint(targetLat, targetLng, transportMode = 'bus') {
+  if (!targetLat || !targetLng) return null;
+
+  try {
+    const stops = await fetchOverpassNearbyStops(targetLat, targetLng, 1500, transportMode);
+    if (stops && stops.length > 0) {
+      return stops[0]; // Nearest transit stop
+    }
+
+    return {
+      id: `resolved-stop-${targetLat}-${targetLng}`,
+      name: `Nearest Stop to Target`,
+      description: `Closest Transit Point`,
+      lat: targetLat,
+      lng: targetLng,
+      distKm: 0.1,
+      transportMode
+    };
+  } catch (err) {
+    return null;
   }
 }
 

@@ -211,6 +211,7 @@ export default function FullScreenMapModal({
           currentCoords={currentCoords}
           heading={activeHeading}
           stops={mapStops}
+          routeCoordinates={route?.coordinates}
           height="100vh"
           tileStyle={tileStyle}
         />

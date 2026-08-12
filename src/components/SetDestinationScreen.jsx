@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, Bookmark } from 'lucide-react';
-import { searchNominatimPlaces, fetchOverpassNearbyStops } from '../utils/osmService';
+import { searchNominatimPlaces, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint } from '../utils/osmService';
 import { requestBrowserLocation } from '../utils/locationService';
 import LeafletMap from './LeafletMap';
 import LocationPermissionModal from './LocationPermissionModal';
@@ -28,6 +28,8 @@ export default function SetDestinationScreen({
 
   const [selectedOriginStop, setSelectedOriginStop] = useState(null);
   const [selectedDestinationStop, setSelectedDestinationStop] = useState(null);
+  const [selectedTargetPlace, setSelectedTargetPlace] = useState(null);
+  const [resolvingNearestStop, setResolvingNearestStop] = useState(false);
 
   const [thresholdType, setThresholdType] = useState(defaultSettings?.defaultThresholdType || 'stops');
   const [thresholdValue, setThresholdValue] = useState(defaultSettings?.defaultThresholdValue || 2);
@@ -41,6 +43,7 @@ export default function SetDestinationScreen({
     setTransportMode(modeId);
     localStorage.setItem('stopahead_last_transit_mode', modeId);
     setSelectedDestinationStop(null); // Reset selection to pick mode-matched stop
+    setSelectedTargetPlace(null);
     loadNearbyStops(2500, modeId);
   };
 
@@ -158,9 +161,29 @@ export default function SetDestinationScreen({
     }
   };
 
-  const handleSelectDestination = (place) => {
-    console.log('[StopAhead] Destination stop selected:', place);
-    setSelectedDestinationStop(place);
+  const handleSelectDestination = async (place) => {
+    console.log('[StopAhead] Destination place selected:', place);
+    setSelectedTargetPlace(place);
+    setResolvingNearestStop(true);
+
+    try {
+      // Find nearest transit stop to this business/landmark
+      const nearestStop = await fetchNearestTransitStopToPoint(place.lat, place.lng, transportMode);
+      if (nearestStop) {
+        setSelectedDestinationStop({
+          ...nearestStop,
+          targetPlaceName: place.name,
+          targetPlaceDescription: place.description
+        });
+      } else {
+        setSelectedDestinationStop(place);
+      }
+    } catch (e) {
+      setSelectedDestinationStop(place);
+    } finally {
+      setResolvingNearestStop(false);
+    }
+
     if (!selectedOriginStop && userLocation?.lat) {
       setSelectedOriginStop({
         id: 'current-pos',
@@ -437,14 +460,17 @@ export default function SetDestinationScreen({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.3rem' }}>
-                Selected Destination Stop
+                {selectedTargetPlace?.isPlace ? 'Target Destination & Closest Transit Stop' : 'Selected Destination Stop'}
               </div>
               <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                {selectedDestinationStop.name}
+                {selectedTargetPlace ? selectedTargetPlace.name : selectedDestinationStop.name}
               </div>
-              {selectedDestinationStop.description && (
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  {selectedDestinationStop.description}
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {selectedTargetPlace ? selectedTargetPlace.description : selectedDestinationStop.description}
+              </div>
+              {selectedTargetPlace && selectedDestinationStop && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, marginTop: '0.4rem', background: 'rgba(2, 90, 237, 0.12)', padding: '0.3rem 0.5rem', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}>
+                  🚌 Commute Alert Stop: {selectedDestinationStop.name}
                 </div>
               )}
             </div>
