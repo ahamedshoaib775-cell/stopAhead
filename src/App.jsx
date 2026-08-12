@@ -22,7 +22,7 @@ import { fetchOSRMRoute } from './utils/osmService';
 import { triggerVibration, stopVibration } from './utils/vibrationHelper';
 import { playSoundPreset, stopAlertLoop } from './utils/audioSynthesizer';
 import { speakVoiceAlert, stopVoiceAlert } from './utils/speechService';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Bot, MessageSquare } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
