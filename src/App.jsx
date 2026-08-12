@@ -81,21 +81,55 @@ export default function App() {
     reloadDelayReports();
   }, []);
 
+  const [isGuestMode, setIsGuestMode] = useState(() => {
+    return localStorage.getItem('stopahead_guest_mode') === 'true';
+  });
+
   // Check initial Supabase Auth session & listen to state changes
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
-      setAuthLoading(false);
-    });
+    let isMounted = true;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
-      setAuthLoading(false);
-    });
+    // Safety timeout: Never stay stuck in authLoading for more than 1.2s
+    const timer = setTimeout(() => {
+      if (isMounted) setAuthLoading(false);
+    }, 1200);
 
-    return () => subscription.unsubscribe();
+    try {
+      supabase.auth.getSession()
+        .then(({ data }) => {
+          if (isMounted) {
+            setSession(data?.session ?? null);
+            setUser(data?.session?.user ?? null);
+            setAuthLoading(false);
+            clearTimeout(timer);
+          }
+        })
+        .catch((err) => {
+          console.warn('Supabase auth getSession error:', err);
+          if (isMounted) {
+            setAuthLoading(false);
+            clearTimeout(timer);
+          }
+        });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+        if (isMounted) {
+          setSession(currentSession);
+          setUser(currentSession?.user ?? null);
+          setAuthLoading(false);
+          clearTimeout(timer);
+        }
+      });
+
+      return () => {
+        isMounted = false;
+        clearTimeout(timer);
+        subscription?.unsubscribe();
+      };
+    } catch (err) {
+      setAuthLoading(false);
+      clearTimeout(timer);
+    }
   }, []);
 
   // Fetch DB data whenever logged-in user changes (Strict User Isolation)
@@ -581,14 +615,18 @@ export default function App() {
     );
   }
 
-  // 2. Auth Guard: Unauthenticated Users see AuthScreen
-  if (!user) {
+  // 2. Auth Guard: Unauthenticated Users see AuthScreen (unless Guest Mode active)
+  if (!user && !isGuestMode) {
     return (
       <div className="app-wrapper" style={{ justifyContent: 'center' }}>
         <AuthScreen
           onAuthSuccess={(authUser, authSession) => {
             setUser(authUser);
             setSession(authSession);
+          }}
+          onContinueAsGuest={() => {
+            setIsGuestMode(true);
+            localStorage.setItem('stopahead_guest_mode', 'true');
           }}
         />
       </div>

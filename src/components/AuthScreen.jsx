@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 
-export default function AuthScreen({ onAuthSuccess }) {
+export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -444,6 +444,35 @@ export default function AuthScreen({ onAuthSuccess }) {
               style={{ fontSize: '0.78rem', padding: '0.45rem 0.8rem', width: '100%' }}
             >
               Send Reset Link
+            </button>
+          </div>
+        )}
+
+        {/* Continue as Guest Actions Prompt */}
+        {onContinueAsGuest && (
+          <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={onContinueAsGuest}
+              style={{
+                background: 'rgba(2, 90, 237, 0.12)',
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--radius-md)',
+                color: 'var(--accent)',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                padding: '0.65rem 1rem',
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem'
+              }}
+              id="btn-continue-guest"
+            >
+              <span>Continue as Guest (Explore Map & Transit)</span>
+              <ArrowRight size={15} />
             </button>
           </div>
         )}
