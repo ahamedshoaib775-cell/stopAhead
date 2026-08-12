@@ -1,7 +1,8 @@
-// Header.jsx - Wordmark header with custom SA logo & Vercel deployment badge
+// Header.jsx - Wordmark header with custom SA logo & Assistant Chatbot launcher button
 import React, { useState, useEffect } from 'react';
+import { Bot, MessageSquare } from 'lucide-react';
 
-export default function Header({ onNavigate, user }) {
+export default function Header({ onNavigate, user, onOpenChatbot }) {
   const [currentTime, setCurrentTime] = useState('');
 
   useEffect(() => {
@@ -23,7 +24,6 @@ export default function Header({ onNavigate, user }) {
         onClick={() => onNavigate('home')}
         style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.65rem' }}
       >
-        {/* Official Cropped StopAhead Logo Pin Mark */}
         <img
           src="/logo-icon.png"
           alt="StopAhead Icon"
@@ -34,12 +34,35 @@ export default function Header({ onNavigate, user }) {
             filter: 'drop-shadow(0 2px 8px rgba(2, 90, 237, 0.35))'
           }}
         />
-
         <span className="logo-wordmark-text" style={{ fontSize: '1.2rem', fontWeight: 800 }}>StopAhead</span>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-
+        {/* Assistant Chatbot Launcher */}
+        {onOpenChatbot && (
+          <button
+            type="button"
+            onClick={onOpenChatbot}
+            style={{
+              padding: '0.35rem 0.6rem',
+              borderRadius: 'var(--radius-full, 999px)',
+              background: 'rgba(2, 90, 237, 0.15)',
+              border: '1px solid var(--accent, #025AED)',
+              color: 'var(--accent, #025AED)',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              cursor: 'pointer'
+            }}
+            title="Ask StopAhead AI Assistant"
+            id="btn-open-chatbot-header"
+          >
+            <Bot size={15} />
+            <span>AI Assistant</span>
+          </button>
+        )}
 
         <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>
           {currentTime}

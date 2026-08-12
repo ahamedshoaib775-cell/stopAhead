@@ -13,6 +13,7 @@ import ShareTripModal from './components/ShareTripModal';
 import AutoCheckInModal from './components/AutoCheckInModal';
 import CommunityDisruptionModal from './components/CommunityDisruptionModal';
 import StopReportModal from './components/StopReportModal';
+import ChatbotModal from './components/ChatbotModal';
 
 import { supabase } from './utils/supabaseClient';
 import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports } from './utils/dbService';
@@ -41,6 +42,7 @@ export default function App() {
 
   // Full-Screen Map Modal State
   const [isFullScreenMapOpen, setIsFullScreenMapOpen] = useState(false);
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
 
   // Application Settings State
   const [settings, setSettings] = useState(() => {
@@ -602,6 +604,7 @@ export default function App() {
         onNavigate={setActiveTab}
         gpsMode={settings.gpsMode}
         user={user}
+        onOpenChatbot={() => setIsChatbotOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -737,6 +740,48 @@ export default function App() {
           stopName={activeTrip?.destinationStop?.name || 'Selected Stop'}
           onClose={() => setShowStopReportModal(false)}
         />
+      )}
+
+      {/* AI Assistant Chatbot Modal */}
+      <ChatbotModal
+        isOpen={isChatbotOpen}
+        onClose={() => setIsChatbotOpen(false)}
+        appContext={{
+          userPosition,
+          userLocation,
+          activeTrip,
+          transportMode: activeTrip?.transportMode || 'bus'
+        }}
+      />
+
+      {/* Floating AI Assistant FAB (visible when chatbot modal is closed) */}
+      {!isChatbotOpen && !isFullScreenMapOpen && (
+        <button
+          type="button"
+          onClick={() => setIsChatbotOpen(true)}
+          style={{
+            position: 'fixed',
+            bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))',
+            right: '1.25rem',
+            zIndex: 900,
+            width: '48px',
+            height: '48px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #025AED, #00e5ff)',
+            border: '2px solid #ffffff',
+            color: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 6px 20px rgba(2, 90, 237, 0.5)',
+            transition: 'transform 0.2s ease'
+          }}
+          title="Open AI Assistant"
+          id="btn-chatbot-fab"
+        >
+          <Bot size={24} />
+        </button>
       )}
 
       {/* Mobile Navigation Bar (Hidden when full-screen map modal is open) */}
