@@ -1,7 +1,7 @@
-// GoogleMap.jsx - Forwarding wrapper to LeafletMap (OpenStreetMap / Leaflet Engine)
+// GoogleMap.jsx - Forwarding wrapper to MapLibreMap (MapLibre GL JS / OpenFreeMap Engine)
 import React from 'react';
-import LeafletMap from './LeafletMap';
+import MapLibreMap from './MapLibreMap';
 
 export default function GoogleMap(props) {
-  return <LeafletMap {...props} />;
+  return <MapLibreMap {...props} />;
 }
