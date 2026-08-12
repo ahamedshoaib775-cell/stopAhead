@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, Bookmark } from 'lucide-react';
-import { searchNominatimPlaces, fetchOverpassNearbyStops } from '../utils/osmService';
+import { searchPlacesWithBounds, fetchNearbyTransitStops } from '../utils/googleMapsService';
 import { requestBrowserLocation } from '../utils/locationService';
-import LeafletMap from './LeafletMap';
+import GoogleMap from './GoogleMap';
 import LocationPermissionModal from './LocationPermissionModal';
 import CityOverrideModal from './CityOverrideModal';
 import LocationIndicatorChip from './LocationIndicatorChip';
@@ -54,33 +54,17 @@ export default function SetDestinationScreen({
     }
   }, [userLocation]);
 
-  // Fetch real nearby transit stops via live OpenStreetMap Overpass API filtered by transportMode
+  // Fetch real nearby transit stops via Google Places API Nearby Search centered on live user coordinates
   const loadNearbyStops = async (radiusMeters = 2500, currentMode = transportMode) => {
     if (!userLocation?.lat || !userLocation?.lng) return;
 
     setIsLoadingNearby(true);
     try {
-      let stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, radiusMeters, currentMode);
+      let stops = await fetchNearbyTransitStops(userLocation.lat, userLocation.lng, radiusMeters, currentMode);
 
       // Auto-expand to 6km if tight 2.5km returned 0 stops
       if (stops.length === 0 && radiusMeters <= 2500) {
-        stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, 6000, currentMode);
-      }
-
-      // If still 0, fallback to querying Nominatim for local transit places in city
-      if (stops.length === 0) {
-        const locationBias = { lat: userLocation.lat, lng: userLocation.lng, delta: 0.15, bounded: true };
-        const queryTerm = userLocation.cityName ? `${userLocation.cityName} ${currentMode} station` : `${currentMode} station`;
-        const fallbackPlaces = await searchNominatimPlaces(queryTerm, locationBias);
-        stops = fallbackPlaces.map((p) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description || 'OpenStreetMap Transit Node',
-          lat: p.lat,
-          lng: p.lng,
-          distKm: 1.5,
-          transportMode: currentMode
-        }));
+        stops = await fetchNearbyTransitStops(userLocation.lat, userLocation.lng, 6000, currentMode);
       }
 
       setNearbyStops(stops);
@@ -106,7 +90,7 @@ export default function SetDestinationScreen({
     loadNearbyStops(2500, transportMode);
   }, [userLocation?.lat, userLocation?.lng, userLocation?.cityName, transportMode]);
 
-  // Location-Aware Nominatim Search with Hard Bounding Box (bounded=1)
+  // Google Places Autocomplete Search with strict hard locationRestriction bounding box
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setOsmSearchResults([]);
@@ -116,21 +100,14 @@ export default function SetDestinationScreen({
     const timer = setTimeout(async () => {
       setIsSearchingOsm(true);
       try {
-        const locationBias = userLocation?.lat && userLocation?.lng ? {
-          lat: userLocation.lat,
-          lng: userLocation.lng,
-          delta: 0.12, // ~12 km bounding box
-          bounded: true // HARD FILTER: strictly exclude results from other cities
-        } : null;
-
-        const places = await searchNominatimPlaces(searchQuery, locationBias);
+        const places = await searchPlacesWithBounds(searchQuery, userLocation);
         setOsmSearchResults(places);
       } catch (e) {
-        console.warn('Nominatim search failed:', e);
+        console.warn('Google Places Autocomplete search failed:', e);
       } finally {
         setIsSearchingOsm(false);
       }
-    }, 400);
+    }, 350);
 
     return () => clearTimeout(timer);
   }, [searchQuery, userLocation]);
@@ -236,7 +213,7 @@ export default function SetDestinationScreen({
         <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
           Route Map Preview
         </div>
-        <LeafletMap
+        <GoogleMap
           currentCoords={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : null}
           originCoords={selectedOriginStop ? [selectedOriginStop.lat, selectedOriginStop.lng] : null}
           destCoords={selectedDestinationStop ? [selectedDestinationStop.lat, selectedDestinationStop.lng] : null}

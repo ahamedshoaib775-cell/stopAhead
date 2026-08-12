@@ -1,7 +1,7 @@
 // FullScreenMapModal.jsx - Google Maps-grade full-screen interactive OpenStreetMap live navigation experience
 import React, { useState } from 'react';
 import { ArrowLeft, Search, LocateFixed, Compass, Layers, Navigation, CheckCircle2, MapPin, Gauge } from 'lucide-react';
-import LeafletMap from './LeafletMap';
+import GoogleMap from './GoogleMap';
 import { formatTimeRemaining } from '../utils/geoHelper';
 
 export default function FullScreenMapModal({
@@ -205,7 +205,7 @@ export default function FullScreenMapModal({
 
       {/* Main OpenStreetMap Canvas */}
       <div style={{ flex: 1, width: '100%', height: '100%' }}>
-        <LeafletMap
+        <GoogleMap
           originCoords={originCoords}
           destCoords={destCoords}
           currentCoords={currentCoords}
@@ -299,10 +299,10 @@ export default function FullScreenMapModal({
           }}
         >
           <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-            Tap anywhere on the map to set a target destination
+            View-only Google Maps Transit Navigation
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-            Or search nearby transit stops via OpenStreetMap
+            Search for your target stop to configure proximity tracking
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 // CityOverrideModal.jsx - Manual city selection and location override popover
 import React, { useState } from 'react';
 import { MapPin, Search, Navigation, X } from 'lucide-react';
-import { geocodeCity } from '../utils/osmService';
+import { geocodeCity } from '../utils/googleMapsService';
 
 const POPULAR_CITIES = ['Chennai', 'New York', 'London', 'Tokyo', 'San Francisco', 'Mumbai'];
 

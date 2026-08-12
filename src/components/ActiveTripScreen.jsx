@@ -222,7 +222,7 @@ export default function ActiveTripScreen({
             {isLoadingRoute ? (
               <>
                 <Loader2 size={12} className="spin" />
-                <span>Fetching OSRM polyline...</span>
+                <span>Fetching Google Directions route...</span>
               </>
             ) : (
               <>
