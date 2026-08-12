@@ -14,7 +14,7 @@ export async function fetchUserSavedRoutes(userId) {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    if (!error && data) {
+    if (!error && Array.isArray(data)) {
       return data;
     }
   } catch (err) {
@@ -26,7 +26,8 @@ export async function fetchUserSavedRoutes(userId) {
   const stored = localStorage.getItem(localKey);
   if (stored) {
     try {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) return parsed;
     } catch (e) {}
   }
   return [];
@@ -60,7 +61,7 @@ export async function saveUserRoute(userId, routeData) {
       .insert([newRouteRecord])
       .select();
 
-    if (!error && data && data.length > 0) {
+    if (!error && Array.isArray(data) && data.length > 0) {
       return data[0];
     }
   } catch (err) {
@@ -106,7 +107,7 @@ export async function fetchUserTripHistory(userId) {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    if (!error && data) {
+    if (!error && Array.isArray(data)) {
       return data;
     }
   } catch (err) {
@@ -117,7 +118,8 @@ export async function fetchUserTripHistory(userId) {
   const stored = localStorage.getItem(localKey);
   if (stored) {
     try {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) return parsed;
     } catch (e) {}
   }
   return [];
@@ -165,7 +167,7 @@ export async function fetchEmergencyContact(userId) {
   if (userId) {
     try {
       const { data } = await supabase.from('emergency_contacts').select('*').eq('user_id', userId).limit(1);
-      if (data && data.length > 0) {
+      if (data && Array.isArray(data) && data.length > 0) {
         localStorage.setItem(localKey, JSON.stringify(data[0]));
         return data[0];
       }
@@ -201,7 +203,7 @@ export async function fetchDelayReports() {
   const localKey = 'stopahead_delay_reports';
   try {
     const { data, error } = await supabase.from('delay_reports').select('*').order('created_at', { ascending: false }).limit(20);
-    if (!error && data) {
+    if (!error && Array.isArray(data)) {
       // Filter out reports older than 60 minutes
       const now = Date.now();
       const valid = data.filter(r => (now - new Date(r.created_at).getTime()) < 3600000);
@@ -213,8 +215,11 @@ export async function fetchDelayReports() {
   const stored = localStorage.getItem(localKey);
   if (stored) {
     try {
-      const now = Date.now();
-      return JSON.parse(stored).filter(r => (now - new Date(r.created_at).getTime()) < 3600000);
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        const now = Date.now();
+        return parsed.filter(r => (now - new Date(r.created_at).getTime()) < 3600000);
+      }
     } catch (e) {}
   }
   return [];
@@ -273,6 +278,7 @@ export async function createStopReport(reportData) {
 
   const localKey = 'stopahead_stop_reports';
   const existing = JSON.parse(localStorage.getItem(localKey) || '[]');
-  localStorage.setItem(localKey, JSON.stringify([record, ...existing]));
+  const updated = Array.isArray(existing) ? [record, ...existing] : [record];
+  localStorage.setItem(localKey, JSON.stringify(updated));
   return record;
 }

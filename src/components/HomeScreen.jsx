@@ -12,10 +12,13 @@ export default function HomeScreen({
   onNavigate,
   onExpandFullScreen
 }) {
+  const safeSavedRoutes = Array.isArray(savedRoutes) ? savedRoutes : [];
+  const safeTripHistory = Array.isArray(tripHistory) ? tripHistory : [];
+
   const currentHour = new Date().getHours();
   const isMorning = currentHour >= 6 && currentHour < 12;
   const isEvening = currentHour >= 16 && currentHour < 21;
-  const suggestedRoute = savedRoutes.length > 0 ? savedRoutes[0] : null;
+  const suggestedRoute = safeSavedRoutes.length > 0 ? safeSavedRoutes[0] : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -155,18 +158,18 @@ export default function HomeScreen({
       <div>
         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <Bookmark size={14} color="var(--accent)" />
-          <span>My Saved Favorite Routes ({savedRoutes.length})</span>
+          <span>My Saved Favorite Routes ({safeSavedRoutes.length})</span>
         </div>
 
-        {savedRoutes.length > 0 ? (
+        {safeSavedRoutes.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {savedRoutes.map((route) => {
+            {safeSavedRoutes.map((route, idx) => {
               const modeInfo = getTransitModeInfo(route.transport_mode || 'bus');
-              const RouteIcon = modeInfo.icon;
+              const RouteIcon = modeInfo?.icon || Bookmark;
 
               return (
                 <div
-                  key={route.id}
+                  key={route.id ? `${route.id}-${idx}` : idx}
                   className="quiet-card interactive"
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.9rem 1.1rem' }}
                 >
@@ -211,7 +214,7 @@ export default function HomeScreen({
                         {route.title || route.destination_name}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                        {modeInfo.label} • To: {route.destination_name}
+                        {modeInfo?.label || 'Bus'} • To: {route.destination_name}
                       </div>
                     </div>
                   </div>
@@ -248,7 +251,7 @@ export default function HomeScreen({
       </div>
 
       {/* Recent Trip History */}
-      {tripHistory.length > 0 && (
+      {safeTripHistory.length > 0 && (
         <div>
           <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <Clock size={14} color="var(--accent)" />
@@ -256,13 +259,13 @@ export default function HomeScreen({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {tripHistory.slice(0, 3).map((item) => {
+            {safeTripHistory.slice(0, 3).map((item, idx) => {
               const modeInfo = getTransitModeInfo(item.transport_mode || 'bus');
-              const HistoryIcon = modeInfo.icon;
+              const HistoryIcon = modeInfo?.icon || Clock;
 
               return (
                 <div
-                  key={item.id}
+                  key={item.id ? `${item.id}-${idx}` : idx}
                   style={{
                     padding: '0.75rem 0.9rem',
                     borderRadius: 'var(--radius-md)',
@@ -277,7 +280,7 @@ export default function HomeScreen({
                     <HistoryIcon size={16} color="var(--accent)" />
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{item.destination_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{modeInfo.label} • From {item.origin_name}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{modeInfo?.label || 'Bus'} • From {item.origin_name}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: 'var(--accent)' }}>
