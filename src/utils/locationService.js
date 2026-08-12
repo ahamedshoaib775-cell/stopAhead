@@ -1,5 +1,5 @@
 // locationService.js - Geolocation browser manager & proximity calculator
-import { reverseGeocodeLocation } from './googleMapsService';
+import { reverseGeocodeLocation } from './osmService';
 import { calculateHaversineDistance } from './geoHelper';
 
 // In-memory session cache for user location

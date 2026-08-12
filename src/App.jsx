@@ -17,7 +17,7 @@ import StopReportModal from './components/StopReportModal';
 import { supabase } from './utils/supabaseClient';
 import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports } from './utils/dbService';
 import { calculateHaversineDistance, calculateBearing } from './utils/geoHelper';
-import { fetchTransitDirections } from './utils/googleMapsService';
+import { fetchOSRMRoute } from './utils/osmService';
 import { triggerVibration, stopVibration } from './utils/vibrationHelper';
 import { playSoundPreset, stopAlertLoop } from './utils/audioSynthesizer';
 import { speakVoiceAlert, stopVoiceAlert } from './utils/speechService';
@@ -247,36 +247,36 @@ export default function App() {
     setActiveTab('active-trip');
     triggerVibration('tap');
 
-    // Fetch live Google Transit Directions API polyline & routing details
+    // Fetch live OSRM polyline & routing details asynchronously with vehicle-specific speed profile
     try {
-      const directionsResult = await fetchTransitDirections(origin, destinationStop, transportMode);
-      if (directionsResult && directionsResult.success) {
-        const realDist = parseFloat(directionsResult.distKm.toFixed(1));
-        const realStops = directionsResult.numStops || Math.max(1, Math.ceil(realDist / 1.2));
+      const osrmResult = await fetchOSRMRoute(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng, transportMode);
+      if (osrmResult && osrmResult.success) {
+        const realDist = parseFloat(osrmResult.distKm.toFixed(1));
+        const realStops = Math.max(1, Math.ceil(realDist / 1.2));
 
         setActiveTrip((prev) => prev ? ({
           ...prev,
           isLoadingRoute: false,
           totalTripDistanceKm: realDist,
           distanceRemainingKm: realDist,
-          timeRemainingMins: directionsResult.durationMins,
+          timeRemainingMins: osrmResult.durationMins,
           stopsRemaining: realStops,
           destinationStopIndex: realStops,
           route: {
             name: `${origin.name} → ${destinationStop.name}`,
             stops: [origin, destinationStop],
-            coordinates: directionsResult.coordinates
+            coordinates: osrmResult.coordinates
           }
         }) : null);
       } else {
         setActiveTrip((prev) => prev ? ({ ...prev, isLoadingRoute: false }) : null);
       }
     } catch (err) {
-      console.warn('[StopAhead] Google Directions route fetch error:', err);
+      console.warn('[StopAhead] OSRM route fetch error:', err);
       setActiveTrip((prev) => prev ? ({
         ...prev,
         isLoadingRoute: false,
-        routeError: 'Could not load Google Directions route. Showing estimated straight route.'
+        routeError: 'Could not load exact OSRM driving directions. Showing estimated route.'
       }) : null);
     }
   };

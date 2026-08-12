@@ -1,7 +1,7 @@
 // FullScreenMapModal.jsx - Google Maps-grade full-screen interactive OpenStreetMap live navigation experience
 import React, { useState } from 'react';
 import { ArrowLeft, Search, LocateFixed, Compass, Layers, Navigation, CheckCircle2, MapPin, Gauge } from 'lucide-react';
-import GoogleMap from './GoogleMap';
+import LeafletMap from './LeafletMap';
 import { formatTimeRemaining } from '../utils/geoHelper';
 
 export default function FullScreenMapModal({
@@ -205,7 +205,7 @@ export default function FullScreenMapModal({
 
       {/* Main OpenStreetMap Canvas */}
       <div style={{ flex: 1, width: '100%', height: '100%' }}>
-        <GoogleMap
+        <LeafletMap
           originCoords={originCoords}
           destCoords={destCoords}
           currentCoords={currentCoords}
