@@ -51,6 +51,21 @@ export default function LeafletMap({
   const routeGlowPolylineRef = useRef(null);
 
   const [weakGpsInfo, setWeakGpsInfo] = useState(null);
+  const [leafletReady, setLeafletReady] = useState(() => typeof window !== 'undefined' && !!window.L);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.L) {
+      setLeafletReady(true);
+      return;
+    }
+    const interval = setInterval(() => {
+      if (window.L) {
+        setLeafletReady(true);
+        clearInterval(interval);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
 
   // Helper to create StopAhead Branded Destination Marker using /logo-icon.png
   const createDestinationIcon = () => {
@@ -327,7 +342,7 @@ export default function LeafletMap({
         map.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
       } catch (e) {}
     }
-  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, targetPlaceCoords, tileStyle]);
+  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, targetPlaceCoords, tileStyle, leafletReady]);
 
   // Zoom control handlers
   const handleZoomIn = (e) => {
