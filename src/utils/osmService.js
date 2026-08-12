@@ -202,24 +202,53 @@ export async function fetchMetroLineStops(originLat, originLng, destLat, destLng
 
 /**
  * Automatically fetch the nearest transit stop to a given target coordinate (e.g. store, mall, landmark)
+ * Expands search radius from 1.5 km up to 10 km if needed
  */
 export async function fetchNearestTransitStopToPoint(targetLat, targetLng, transportMode = 'bus') {
   if (!targetLat || !targetLng) return null;
 
   try {
-    const stops = await fetchOverpassNearbyStops(targetLat, targetLng, 1500, transportMode);
+    // 1. Try tight 1.5 km radius
+    let stops = await fetchOverpassNearbyStops(targetLat, targetLng, 1500, transportMode);
+
+    // 2. Expand to 5 km if nothing found
+    if (!stops || stops.length === 0) {
+      stops = await fetchOverpassNearbyStops(targetLat, targetLng, 5000, transportMode);
+    }
+
+    // 3. Expand to 10 km if still nothing found
+    if (!stops || stops.length === 0) {
+      stops = await fetchOverpassNearbyStops(targetLat, targetLng, 10000, transportMode);
+    }
+
     if (stops && stops.length > 0) {
-      return stops[0];
+      const nearestStop = stops[0];
+      const gapKm = parseFloat(nearestStop.distKm.toFixed(1));
+      const walkingMins = Math.max(1, Math.round(gapKm * 12)); // ~12 mins per km walking speed
+
+      return {
+        nearestStop,
+        gapKm,
+        walkingMins,
+        isFarGap: gapKm > 1.5,
+        isVeryFarGap: gapKm > 5.0
+      };
     }
 
     return {
-      id: `resolved-stop-${targetLat}-${targetLng}`,
-      name: `Nearest Stop to Target`,
-      description: `Closest ${transportMode.toUpperCase()} Point`,
-      lat: targetLat,
-      lng: targetLng,
-      distKm: 0.1,
-      transportMode
+      nearestStop: {
+        id: `resolved-stop-${targetLat}-${targetLng}`,
+        name: `Nearest ${transportMode.toUpperCase()} Station`,
+        description: `Closest Transit Point`,
+        lat: targetLat,
+        lng: targetLng,
+        distKm: 0.1,
+        transportMode
+      },
+      gapKm: 0.1,
+      walkingMins: 1,
+      isFarGap: false,
+      isVeryFarGap: true
     };
   } catch (err) {
     return null;

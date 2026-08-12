@@ -30,6 +30,7 @@ export default function SetDestinationScreen({
   const [selectedDestinationStop, setSelectedDestinationStop] = useState(null);
   const [selectedTargetPlace, setSelectedTargetPlace] = useState(null);
   const [resolvingNearestStop, setResolvingNearestStop] = useState(false);
+  const [stationGapInfo, setStationGapInfo] = useState(null);
 
   const [thresholdType, setThresholdType] = useState(defaultSettings?.defaultThresholdType || 'stops');
   const [thresholdValue, setThresholdValue] = useState(defaultSettings?.defaultThresholdValue || 2);
@@ -44,6 +45,7 @@ export default function SetDestinationScreen({
     localStorage.setItem('stopahead_last_transit_mode', modeId);
     setSelectedDestinationStop(null); // Reset selection to pick mode-matched stop
     setSelectedTargetPlace(null);
+    setStationGapInfo(null);
     loadNearbyStops(2500, modeId);
   };
 
@@ -109,7 +111,7 @@ export default function SetDestinationScreen({
     loadNearbyStops(2500, transportMode);
   }, [userLocation?.lat, userLocation?.lng, userLocation?.cityName, transportMode]);
 
-  // Location-Aware Nominatim Search with Hard Bounding Box (bounded=1)
+  // Location-Aware Nominatim Search across all place types (malls, stores, landmarks, addresses)
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setOsmSearchResults([]);
@@ -122,7 +124,7 @@ export default function SetDestinationScreen({
         const locationBias = userLocation?.lat && userLocation?.lng ? {
           lat: userLocation.lat,
           lng: userLocation.lng,
-          delta: 0.12, // ~12 km bounding box
+          delta: 0.15, // ~15 km bounding box around user city
           bounded: true // HARD FILTER: strictly exclude results from other cities
         } : null;
 
@@ -161,20 +163,25 @@ export default function SetDestinationScreen({
     }
   };
 
+  // Handle Selection of a Place or Transit Stop Result
   const handleSelectDestination = async (place) => {
     console.log('[StopAhead] Destination place selected:', place);
     setSelectedTargetPlace(place);
     setResolvingNearestStop(true);
+    setStationGapInfo(null);
 
     try {
-      // Find nearest transit stop to this business/landmark
-      const nearestStop = await fetchNearestTransitStopToPoint(place.lat, place.lng, transportMode);
-      if (nearestStop) {
+      // Find nearest transit stop to this business/landmark (expanding search up to 10km if needed)
+      const result = await fetchNearestTransitStopToPoint(place.lat, place.lng, transportMode);
+      if (result && result.nearestStop) {
         setSelectedDestinationStop({
-          ...nearestStop,
+          ...result.nearestStop,
           targetPlaceName: place.name,
-          targetPlaceDescription: place.description
+          targetPlaceDescription: place.description,
+          gapKm: result.gapKm,
+          walkingMins: result.walkingMins
         });
+        setStationGapInfo(result);
       } else {
         setSelectedDestinationStop(place);
       }
@@ -265,6 +272,7 @@ export default function SetDestinationScreen({
           destCoords={selectedDestinationStop ? [selectedDestinationStop.lat, selectedDestinationStop.lng] : null}
           stops={nearbyStops}
           transportMode={transportMode}
+          targetPlaceCoords={selectedTargetPlace ? [selectedTargetPlace.lat, selectedTargetPlace.lng] : null}
           height="170px"
         />
       </div>
@@ -470,8 +478,35 @@ export default function SetDestinationScreen({
                 {selectedTargetPlace ? selectedTargetPlace.description : selectedDestinationStop.description}
               </div>
               {selectedTargetPlace && selectedDestinationStop && (
-                <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, marginTop: '0.4rem', background: 'rgba(2, 90, 237, 0.12)', padding: '0.3rem 0.5rem', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}>
-                  🚌 Commute Alert Stop: {selectedDestinationStop.name}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.4rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, background: 'rgba(2, 90, 237, 0.12)', padding: '0.3rem 0.5rem', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}>
+                    🚉 Target Station Stop: {selectedDestinationStop.name}
+                  </div>
+
+                  {stationGapInfo?.isFarGap && (
+                    <div style={{ background: 'rgba(255, 184, 0, 0.12)', border: '1px solid rgba(255, 184, 0, 0.35)', borderRadius: 'var(--radius-md)', padding: '0.65rem 0.8rem', fontSize: '0.78rem', color: '#ffb800', marginTop: '0.3rem' }}>
+                      ⚠️ <strong>No direct {transportMode.toUpperCase()} station at {selectedTargetPlace.name}.</strong><br />
+                      Nearest station is <strong>{selectedDestinationStop.name}</strong> ({stationGapInfo.gapKm} km away) — you'll need to walk/auto/cab from there.
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.3rem' }}>
+                        🚶 Estimated Last-Mile Walk: ~{stationGapInfo.walkingMins} mins ({stationGapInfo.gapKm} km)
+                      </div>
+                    </div>
+                  )}
+
+                  {(stationGapInfo?.isVeryFarGap || (transportMode !== 'bus' && stationGapInfo?.gapKm > 3.5)) && (
+                    <div style={{ marginTop: '0.5rem', padding: '0.65rem 0.8rem', background: 'rgba(0, 229, 255, 0.08)', border: '1px solid rgba(0, 229, 255, 0.3)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        This location isn't well served by {transportMode.toUpperCase()}. Try Bus instead?
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTransportMode('bus')}
+                        style={{ padding: '0.35rem 0.65rem', borderRadius: 'var(--radius-sm)', background: 'var(--accent)', color: '#000', fontWeight: 800, fontSize: '0.75rem', border: 'none', cursor: 'pointer', flexShrink: 0 }}
+                      >
+                        Switch to Bus
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

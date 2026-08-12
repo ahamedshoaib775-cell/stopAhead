@@ -33,6 +33,7 @@ export default function LeafletMap({
   stops = [],
   routeCoordinates = null,
   transportMode = 'bus',
+  targetPlaceCoords = null,
   height = '200px',
   tileStyle = 'dark',
   interactive = true,
@@ -43,6 +44,8 @@ export default function LeafletMap({
   const tileLayerRef = useRef(null);
   const userMarkerRef = useRef(null);
   const destMarkerRef = useRef(null);
+  const targetPlaceMarkerRef = useRef(null);
+  const gapPolylineRef = useRef(null);
   const stopMarkersRef = useRef([]);
   const routePolylineRef = useRef(null);
   const routeGlowPolylineRef = useRef(null);
@@ -63,6 +66,23 @@ export default function LeafletMap({
       `,
       iconSize: [42, 42],
       iconAnchor: [21, 42]
+    });
+  };
+
+  // Helper to create Target Place Pin (Store/Mall/Landmark)
+  const createTargetPlaceIcon = () => {
+    if (!window.L) return null;
+    return window.L.divIcon({
+      className: 'stopahead-target-place-marker',
+      html: `
+        <div style="width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 12px rgba(255, 184, 0, 0.8));">
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: #ffb800; border: 2px solid #ffffff; display: flex; align-items: center; justify-content: center; color: #000; font-weight: 800; font-size: 14px;">
+            📍
+          </div>
+        </div>
+      `,
+      iconSize: [36, 36],
+      iconAnchor: [18, 36]
     });
   };
 
@@ -163,6 +183,14 @@ export default function LeafletMap({
       map.removeLayer(destMarkerRef.current);
       destMarkerRef.current = null;
     }
+    if (targetPlaceMarkerRef.current) {
+      map.removeLayer(targetPlaceMarkerRef.current);
+      targetPlaceMarkerRef.current = null;
+    }
+    if (gapPolylineRef.current) {
+      map.removeLayer(gapPolylineRef.current);
+      gapPolylineRef.current = null;
+    }
 
     if (routePolylineRef.current) {
       map.removeLayer(routePolylineRef.current);
@@ -217,9 +245,26 @@ export default function LeafletMap({
       const destIcon = createDestinationIcon();
       if (destIcon) {
         const marker = window.L.marker(destCoords, { icon: destIcon }).addTo(map);
-        marker.bindTooltip('Destination', { permanent: false, direction: 'top' });
+        marker.bindTooltip('Destination Station', { permanent: false, direction: 'top' });
         destMarkerRef.current = marker;
       }
+    }
+
+    // Render Target Place Pin & Dashed Last-Mile Gap Connector Line
+    if (targetPlaceCoords && destCoords) {
+      const placeIcon = createTargetPlaceIcon();
+      if (placeIcon) {
+        const pMarker = window.L.marker(targetPlaceCoords, { icon: placeIcon }).addTo(map);
+        pMarker.bindTooltip('Target Destination', { permanent: true, direction: 'top' });
+        targetPlaceMarkerRef.current = pMarker;
+      }
+
+      gapPolylineRef.current = window.L.polyline([destCoords, targetPlaceCoords], {
+        color: '#ffb800',
+        weight: 3,
+        dashArray: '6, 8',
+        opacity: 0.9
+      }).addTo(map);
     }
 
     // Snapping Live Position Marker to Route Polyline
@@ -276,11 +321,13 @@ export default function LeafletMap({
       }).addTo(map);
 
       try {
-        const bounds = window.L.latLngBounds(routeLatLngs);
+        const allFitPoints = [...routeLatLngs];
+        if (targetPlaceCoords) allFitPoints.push(targetPlaceCoords);
+        const bounds = window.L.latLngBounds(allFitPoints);
         map.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
       } catch (e) {}
     }
-  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, tileStyle]);
+  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, targetPlaceCoords, tileStyle]);
 
   // Zoom control handlers
   const handleZoomIn = (e) => {
