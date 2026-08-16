@@ -194,30 +194,11 @@ export default function SetDestinationScreen({
   // Handle Selection of a Place or Transit Stop Result
   const handleSelectDestination = async (place) => {
     console.log('[StopAhead] Destination place selected:', place);
-    setSelectedTargetPlace(place);
-    setResolvingNearestStop(true);
+    
+    // 1. Immediately update UI state for instant (<10ms) click feedback
+    setSelectedDestinationStop(place);
+    setSelectedTargetPlace(place.isPlace ? place : null);
     setStationGapInfo(null);
-
-    try {
-      // Find nearest transit stop to this business/landmark (expanding search up to 10km if needed)
-      const result = await fetchNearestTransitStopToPoint(place.lat, place.lng, transportMode);
-      if (result && result.nearestStop) {
-        setSelectedDestinationStop({
-          ...result.nearestStop,
-          targetPlaceName: place.name,
-          targetPlaceDescription: place.description,
-          gapKm: result.gapKm,
-          walkingMins: result.walkingMins
-        });
-        setStationGapInfo(result);
-      } else {
-        setSelectedDestinationStop(place);
-      }
-    } catch (e) {
-      setSelectedDestinationStop(place);
-    } finally {
-      setResolvingNearestStop(false);
-    }
 
     if (!selectedOriginStop && userLocation?.lat) {
       setSelectedOriginStop({
@@ -227,7 +208,30 @@ export default function SetDestinationScreen({
         lng: userLocation.lng
       });
     }
+
+    // 2. Only resolve nearest station asynchronously if selecting a generic landmark/place (not an existing transit stop)
+    if (place.isPlace) {
+      setResolvingNearestStop(true);
+      try {
+        const result = await fetchNearestTransitStopToPoint(place.lat, place.lng, transportMode);
+        if (result && result.nearestStop) {
+          setSelectedDestinationStop({
+            ...result.nearestStop,
+            targetPlaceName: place.name,
+            targetPlaceDescription: place.description,
+            gapKm: result.gapKm,
+            walkingMins: result.walkingMins
+          });
+          setStationGapInfo(result);
+        }
+      } catch (e) {
+        console.warn('Failed to fetch nearest transit stop to place:', e);
+      } finally {
+        setResolvingNearestStop(false);
+      }
+    }
   };
+
 
   const handleConfirmStart = () => {
     if (!selectedDestinationStop) {
