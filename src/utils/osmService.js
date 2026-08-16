@@ -61,23 +61,30 @@ export async function searchNominatimPlaces(query, locationBias = null) {
 }
 
 /**
- * Helper to dispatch a single Overpass API query with expanded tag filters
+ * Helper to dispatch a single Overpass API query with expanded tag filters strictly per transport mode
  */
 async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
   let queryBody = '';
 
-  if (transportMode === 'train') {
+  if (transportMode === 'metro' || transportMode === 'subway') {
     queryBody = `
-      node["railway"~"station|halt|platform"](around:${radiusMeters},${lat},${lng});
-      way["railway"~"station|halt|platform"](around:${radiusMeters},${lat},${lng});
-      node["public_transport"~"station|platform"]["railway"](around:${radiusMeters},${lat},${lng});
-      node["public_transport"="station"](around:${radiusMeters},${lat},${lng});
-    `;
-  } else if (transportMode === 'metro' || transportMode === 'subway') {
-    queryBody = `
-      node["railway"~"station|subway_entrance|subway"](around:${radiusMeters},${lat},${lng});
-      way["railway"~"station|subway_entrance|subway"](around:${radiusMeters},${lat},${lng});
       node["station"="subway"](around:${radiusMeters},${lat},${lng});
+      node["railway"="subway_entrance"](around:${radiusMeters},${lat},${lng});
+      node["railway"="station"]["subway"="yes"](around:${radiusMeters},${lat},${lng});
+      node["subway"="yes"](around:${radiusMeters},${lat},${lng});
+      way["station"="subway"](around:${radiusMeters},${lat},${lng});
+      way["railway"="station"]["subway"="yes"](around:${radiusMeters},${lat},${lng});
+    `;
+  } else if (transportMode === 'local_train') {
+    queryBody = `
+      node["railway"~"station|halt"]["suburban"="yes"](around:${radiusMeters},${lat},${lng});
+      node["railway"~"station|halt"]["commuter"="yes"](around:${radiusMeters},${lat},${lng});
+      way["railway"~"station|halt"]["suburban"="yes"](around:${radiusMeters},${lat},${lng});
+    `;
+  } else if (transportMode === 'train') {
+    queryBody = `
+      node["railway"="station"](around:${radiusMeters},${lat},${lng});
+      way["railway"="station"](around:${radiusMeters},${lat},${lng});
     `;
   } else if (transportMode === 'ferry') {
     queryBody = `
@@ -187,17 +194,24 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000, tr
     console.warn('[StopAhead Overpass] Overpass query notice:', err.message);
   }
 
-  // 2. High-speed Nominatim fallback (< 800ms) with location bias
+  // 2. High-speed Nominatim fallback (< 800ms) strictly matched by transport mode
   try {
     let fallbackQuery = `${transportMode} station`;
     if (transportMode === 'metro' || transportMode === 'subway') fallbackQuery = 'metro station';
     else if (transportMode === 'train') fallbackQuery = 'railway station';
+    else if (transportMode === 'local_train') fallbackQuery = 'suburban railway station';
     else if (transportMode === 'bus') fallbackQuery = 'bus stop';
 
-    const locationBias = { lat, lng, delta: 0.15, bounded: true };
+    const locationBias = { lat, lng, delta: 0.08, bounded: true };
     const fallbackPlaces = await searchNominatimPlaces(fallbackQuery, locationBias);
     if (fallbackPlaces && fallbackPlaces.length > 0) {
-      const stops = fallbackPlaces.map((p) => {
+      const validStops = fallbackPlaces.filter((p) => {
+        const nameLower = (p.name || '').toLowerCase();
+        const descLower = (p.description || '').toLowerCase();
+        if (transportMode === 'metro') return nameLower.includes('metro') || nameLower.includes('subway') || descLower.includes('metro');
+        if (transportMode === 'bus') return nameLower.includes('bus') || nameLower.includes('stop') || descLower.includes('bus');
+        return true;
+      }).map((p) => {
         const distKm = parseFloat(calculateHaversineDistance(lat, lng, p.lat, p.lng).toFixed(1));
         return {
           id: p.id,
@@ -209,9 +223,12 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000, tr
           transportMode
         };
       });
-      stops.sort((a, b) => a.distKm - b.distKm);
-      stops.radiusUsedKm = Math.round(radiusMeters / 1000);
-      return stops;
+
+      if (validStops.length > 0) {
+        validStops.sort((a, b) => a.distKm - b.distKm);
+        validStops.radiusUsedKm = Math.round(radiusMeters / 1000);
+        return validStops;
+      }
     }
   } catch (err) {
     console.warn('[StopAhead Overpass] Nominatim fallback failed:', err.message);
@@ -221,6 +238,7 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000, tr
   emptyStops.radiusUsedKm = Math.round(radiusMeters / 1000);
   return emptyStops;
 }
+
 
 /**
  * Fast batched real-time check of transit mode availability (bus, train, metro, local_train)

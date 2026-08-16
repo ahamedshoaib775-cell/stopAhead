@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, Bookmark } from 'lucide-react';
+import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, AlertTriangle, Bookmark } from 'lucide-react';
 import { searchNominatimPlaces, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute } from '../utils/osmService';
 import { requestBrowserLocation } from '../utils/locationService';
 import LeafletMap from './LeafletMap';
 import LocationPermissionModal from './LocationPermissionModal';
 import CityOverrideModal from './CityOverrideModal';
 import LocationIndicatorChip from './LocationIndicatorChip';
-import TransitModeSelector from './TransitModeSelector';
+import TransitModeSelector, { getTransitModeInfo } from './TransitModeSelector';
+
 
 export default function SetDestinationScreen({
   onStartTrip,
@@ -464,64 +465,84 @@ export default function SetDestinationScreen({
                 })}
               </div>
             ) : (
-              /* Empty State */
+              /* Explicit Per-Mode Proximity Empty State */
               <div
                 style={{
-                  padding: '1.25rem 1rem',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'rgba(255, 255, 255, 0.01)',
-                  border: '1px dashed rgba(255, 255, 255, 0.1)',
-                  textAlign: 'center'
+                  padding: '1.5rem 1.25rem',
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'rgba(239, 68, 68, 0.06)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.6rem'
                 }}
               >
-                <AlertCircle size={20} color="var(--accent)" style={{ marginBottom: '0.4rem' }} />
-                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
-                  No {transportMode} stations found within {searchedRadiusKm || 10} km of {userLocation?.cityName || 'your location'}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
-                  OpenStreetMap search tried up to {searchedRadiusKm || 10} km radius around {userLocation?.cityName || 'Poonamallee'}. Tap below to expand radius or search by station name.
+                <div
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '50%',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <AlertTriangle size={22} color="#ef4444" />
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <div style={{ fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                  No {getTransitModeInfo(transportMode).label} station found near you ({userLocation?.cityName || 'your location'})
+                </div>
+
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '360px', lineHeight: 1.45 }}>
+                  {getTransitModeInfo(transportMode).label} isn't available from your current location. You can search a specific destination by name using the search bar above or switch to an available mode.
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center', marginTop: '0.4rem' }}>
+                  {transportMode !== 'bus' && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectTransportMode('bus')}
+                      style={{
+                        fontSize: '0.8rem',
+                        padding: '0.45rem 0.85rem',
+                        borderRadius: 'var(--radius-full)',
+                        background: 'var(--accent)',
+                        color: '#ffffff',
+                        border: 'none',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Switch to Bus
+                    </button>
+                  )}
+
                   <button
-                    className="btn-secondary"
-                    onClick={() => loadNearbyStops(15000)}
-                    style={{ fontSize: '0.8rem', padding: '0.55rem' }}
+                    type="button"
+                    onClick={() => loadNearbyStops(10000)}
+                    style={{
+                      fontSize: '0.8rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: 'var(--radius-full)',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      color: 'var(--text-secondary)',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
                   >
-                    <Compass size={14} />
-                    <span>Expand Search Radius (15 km)</span>
+                    Expand Search Radius (10 km)
                   </button>
-
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginTop: '0.2rem' }}>
-                    Or search city transit landmarks:
-                  </div>
-
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center' }}>
-                    {['Bus Stand', 'Railway Station', 'Metro', 'Central Market'].map((chip) => (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => setSearchQuery(userLocation?.cityName ? `${userLocation.cityName} ${chip}` : chip)}
-                        style={{
-                          padding: '0.3rem 0.65rem',
-                          borderRadius: 'var(--radius-full)',
-                          background: 'rgba(2, 90, 237, 0.08)',
-                          border: '1px solid rgba(2, 90, 237, 0.2)',
-                          color: 'var(--accent)',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        + {chip}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               </div>
             )}
           </div>
         )}
+
       </div>
 
       {/* Selected Destination Details Highlight Banner */}
