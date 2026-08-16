@@ -1,6 +1,6 @@
 // verifiedBusRoutes.js - Verified MTC Chennai & Metropolitan Transit Route Engine
 // Source of truth for bus numbers, ordered stop sequences, direction validation, and canonical stop resolution.
-import { MTC_CSV_BUS_ROUTES } from './mtcDataset';
+import { MTC_CSV_BUS_ROUTES } from './mtcDataset.js';
 
 /**
  * Canonical Stop Alias Dictionary
@@ -1150,8 +1150,13 @@ export function findAllRoutesServingDestination({ origin, destination, mode = nu
       notes: route.notes || null
     };
 
-    if (origIdx !== -1 && destIdx > origIdx) {
-      const intermediateStops = route.stops.slice(origIdx + 1, destIdx);
+    if (origIdx !== -1 && origIdx !== destIdx) {
+      const isForward = destIdx > origIdx;
+      const intermediateStops = isForward
+        ? route.stops.slice(origIdx + 1, destIdx)
+        : route.stops.slice(destIdx + 1, origIdx).reverse();
+      const stopCount = Math.abs(destIdx - origIdx);
+
       directRoutes.push({
         ...routeObj,
         isDirect: true,
@@ -1159,11 +1164,11 @@ export function findAllRoutesServingDestination({ origin, destination, mode = nu
         destinationStopName: route.stops[destIdx],
         originIndex: origIdx,
         destinationIndex: destIdx,
-        stopCount: destIdx - origIdx,
+        stopCount,
         intermediateStops,
         direction: `${route.stops[origIdx]} → ${route.stops[destIdx]}`
       });
-    } else {
+    } else if (origIdx === -1 && destIdx !== -1) {
       destinationRoutes.push({
         ...routeObj,
         isDirect: false,
