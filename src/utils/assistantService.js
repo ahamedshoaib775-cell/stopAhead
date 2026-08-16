@@ -232,9 +232,10 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName) {
       // Skip modes that are strictly unavailable near user
       if (availability[mode]?.available === false && mode !== 'bus') continue;
 
-      const [origRes, destRes] = await Promise.all([
+      const [origRes, destRes, osmRouteRelations] = await Promise.all([
         fetchNearestTransitStopToPoint(userLat, userLng, mode),
-        fetchNearestTransitStopToPoint(targetPlace.lat, targetPlace.lng, mode)
+        fetchNearestTransitStopToPoint(targetPlace.lat, targetPlace.lng, mode),
+        fetchOsmRouteRelationsBetweenPoints(userLat, userLng, targetPlace.lat, targetPlace.lng, mode, cityName, targetPlace.name)
       ]);
 
       if (origRes?.nearestStop && destRes?.nearestStop) {
@@ -248,6 +249,9 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName) {
         const totalDurationMins = transitMins + walkToOrigMins + walkFromDestMins;
         const stopsCount = Math.max(2, Math.round(routeData.distKm * 1.5));
 
+        const matchedRouteRef = osmRouteRelations && osmRouteRelations.length > 0 ? osmRouteRelations[0].ref : null;
+        const matchedRouteName = osmRouteRelations && osmRouteRelations.length > 0 ? osmRouteRelations[0].name : null;
+
         const option = {
           mode,
           modeLabel: mode === 'metro' ? 'Metro' : mode === 'train' ? 'Train' : mode === 'local_train' ? 'Local Train' : 'Bus',
@@ -258,7 +262,9 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName) {
           stopsCount,
           transitMins,
           walkMins: walkFromDestMins,
-          totalMins: totalDurationMins
+          totalMins: totalDurationMins,
+          matchedRouteRef,
+          matchedRouteName
         };
 
         if (!bestOption || option.totalMins < bestOption.totalMins) {
@@ -268,6 +274,12 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName) {
     }
 
     if (bestOption) {
+      let routeText = `Fastest option: **${bestOption.modeLabel}**`;
+      if (bestOption.matchedRouteRef) {
+        routeText = `Take **${bestOption.modeLabel} ${bestOption.matchedRouteRef}** (${bestOption.matchedRouteName || 'Direct Route'})`;
+      }
+      routeText += ` from **${bestOption.originStop.name}** to **${bestOption.destinationStop.name}** — ${bestOption.totalMins} min total door-to-door.`;
+
       return {
         cardType: 'best_way_there',
         isTripRecommendation: true,
@@ -280,9 +292,12 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName) {
         transitMins: bestOption.transitMins,
         walkMins: bestOption.walkMins,
         totalMins: bestOption.totalMins,
-        responseText: `Fastest option: **${bestOption.modeLabel}** — ${bestOption.totalMins} min total door-to-door.`
+        matchedRouteRef: bestOption.matchedRouteRef,
+        matchedRouteName: bestOption.matchedRouteName,
+        responseText: routeText
       };
     }
+
   } catch (e) {
     console.warn('planBestWayMultiModal error:', e);
   }

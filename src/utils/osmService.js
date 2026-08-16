@@ -566,3 +566,122 @@ export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transpo
     };
   }
 }
+
+/**
+ * Curated Local OSM Route Relation dataset for major Chennai corridors & lines
+ * Used as instant high-speed fallback if live Overpass relation query times out
+ */
+export const LOCAL_OSM_ROUTE_RELATIONS = [
+  { ref: '19B', mode: 'bus', operator: 'MTC', name: '19B: Saidapet ↔ Kelambakkam', corridors: ['saidapet', 'adyar', 'omr', 'kelambakkam', 'navaluru', 'sipcot'] },
+  { ref: '5C', mode: 'bus', operator: 'MTC', name: '5C: T. Nagar ↔ Broadway', corridors: ['t nagar', 'saidapet', 'guindy', 'broadway', 'central'] },
+  { ref: '7M', mode: 'bus', operator: 'MTC', name: '7M: T. Nagar ↔ Broadway', corridors: ['t nagar', 'broadway', 'mount road'] },
+  { ref: '14M', mode: 'bus', operator: 'MTC', name: '14M: NGO Colony ↔ Mount', corridors: ['ngo colony', 'st thomas mount', 'central'] },
+  { ref: '15B', mode: 'bus', operator: 'MTC', name: '15B: Broadway ↔ Koyambedu', corridors: ['broadway', 'koyambedu', 'anna nagar'] },
+  { ref: '27D', mode: 'bus', operator: 'MTC', name: '27D: Foreshore Estate ↔ Villivakkam', corridors: ['foreshore estate', 'villivakkam', 'triplicane', 'kilpauk'] },
+  { ref: '48A', mode: 'bus', operator: 'MTC', name: '48A: Velachery ↔ Ambattur', corridors: ['velachery', 'ambattur', 'guindy'] },
+  { ref: '51', mode: 'bus', operator: 'MTC', name: '51: Tambaram ↔ Velachery', corridors: ['tambaram', 'velachery', 'medavakkam'] },
+  { ref: '21G', mode: 'bus', operator: 'MTC', name: '21G: Broadway ↔ Tambaram', corridors: ['broadway', 'tambaram', 'guindy', 'saidapet'] },
+  { ref: '47A', mode: 'bus', operator: 'MTC', name: '47A: Besant Nagar ↔ ICF', corridors: ['besant nagar', 't nagar', 'icf'] },
+  { ref: 'Blue Line', mode: 'metro', operator: 'CMRL', name: 'Metro Blue Line: Airport ↔ Washermanpet', corridors: ['airport', 'meenambakkam', 'guindy', 'saidapet', 'nandanam', 'central', 'washermanpet', 'wimco nagar'] },
+  { ref: 'Green Line', mode: 'metro', operator: 'CMRL', name: 'Metro Green Line: St. Thomas Mount ↔ Central', corridors: ['st thomas mount', 'alandur', 'egmore', 'koyambedu', 'vadapalani', 'central'] },
+  { ref: 'Suburban South', mode: 'train', operator: 'Southern Railway', name: 'Suburban: Beach ↔ Tambaram ↔ Chengalpattu', corridors: ['beach', 'fort', 'park', 'egmore', 'chetpet', 'nungambakkam', 'kodambakkam', 'mambalam', 'saidapet', 'guindy', 'st thomas mount', 'tambaram', 'chengalpattu'] },
+  { ref: 'Suburban West', mode: 'train', operator: 'Southern Railway', name: 'Suburban: Central ↔ Arakkonam', corridors: ['central', 'perambur', 'villivakkam', 'ambattur', 'avadi', 'tiruvallur', 'arakkonam'] },
+  { ref: 'MRTS', mode: 'local_train', operator: 'Southern Railway', name: 'MRTS Light Rail: Beach ↔ Velachery', corridors: ['beach', 'fort', 'park town', 'chepauk', 'triplicane', 'light house', 'thirumayilai', 'mandaveli', 'greenways road', 'kotturpuram', 'kasturba nagar', 'indira nagar', 'taramani', 'perungudi', 'velachery'] }
+];
+
+/**
+ * Query Overpass API for route relations (bus, subway, train) connecting origin and destination points.
+ * Returns array of route objects with ref, name, operator, mode.
+ */
+export async function fetchOsmRouteRelationsBetweenPoints(origLat, origLng, destLat, destLng, mode = 'bus', originName = '', destName = '') {
+  if (!origLat || !origLng || !destLat || !destLng) return [];
+
+  const osmRouteType = (mode === 'metro' || mode === 'subway')
+    ? 'subway|light_rail'
+    : (mode === 'train' || mode === 'local_train')
+    ? 'train|railway|suburban'
+    : 'bus';
+
+  const overpassQuery = `[out:json][timeout:5];
+(
+  relation["type"="route"]["route"~"${osmRouteType}"](around:2500,${origLat},${origLng});
+)->.orig_routes;
+(
+  relation["type"="route"]["route"~"${osmRouteType}"](around:2500,${destLat},${destLng});
+)->.dest_routes;
+(
+  rel.orig_routes.dest_routes;
+);
+out tags 20;`;
+
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter'
+  ];
+
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: `data=${encodeURIComponent(overpassQuery)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      if (data.elements && data.elements.length > 0) {
+        const routes = [];
+        const seenRefs = new Set();
+
+        for (const elem of data.elements) {
+          if (!elem.tags) continue;
+          const ref = elem.tags.ref || elem.tags.route_ref || elem.tags.name;
+          if (!ref || seenRefs.has(ref.toLowerCase())) continue;
+
+          seenRefs.add(ref.toLowerCase());
+          routes.push({
+            id: `relation-${elem.id}`,
+            ref,
+            name: elem.tags.name || `${mode.toUpperCase()} Route ${ref}`,
+            operator: elem.tags.operator || (mode === 'metro' ? 'Metro Rail' : mode === 'train' ? 'Railway' : 'MTC Bus'),
+            from: elem.tags.from || 'Origin',
+            to: elem.tags.to || 'Destination',
+            mode
+          });
+        }
+
+        if (routes.length > 0) return routes;
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  // Fallback corridor matching against local dataset
+  const origClean = (originName || '').toLowerCase();
+  const destClean = (destName || '').toLowerCase();
+
+  const matchedLocal = LOCAL_OSM_ROUTE_RELATIONS.filter(r => {
+    if (r.mode !== mode && !(r.mode === 'bus' && mode === 'bus')) return false;
+    const matchOrig = !origClean || r.corridors.some(c => origClean.includes(c) || c.includes(origClean));
+    const matchDest = !destClean || r.corridors.some(c => destClean.includes(c) || c.includes(destClean));
+    return matchOrig || matchDest;
+  });
+
+  return matchedLocal.map(r => ({
+    id: `local-${r.ref}`,
+    ref: r.ref,
+    name: r.name,
+    operator: r.operator,
+    from: r.corridors[0],
+    to: r.corridors[r.corridors.length - 1],
+    mode: r.mode
+  }));
+}
+

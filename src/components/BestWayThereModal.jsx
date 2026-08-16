@@ -1,7 +1,6 @@
-// BestWayThereModal.jsx - Mode-agnostic door-to-door transit route comparator & recommendation modal
 import React, { useState, useEffect } from 'react';
-import { Search, Sparkles, Clock, ArrowRight, MapPin, Footprints, Check, Loader2, X, AlertTriangle } from 'lucide-react';
-import { searchNominatimPlaces, fetchNearestTransitStopToPoint, fetchOSRMRoute } from '../utils/osmService';
+import { Search, Sparkles, Clock, ArrowRight, MapPin, Footprints, Check, Loader2, X, AlertTriangle, Tag } from 'lucide-react';
+import { searchNominatimPlaces, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
 import { TRANSIT_MODES, getTransitModeInfo } from './TransitModeSelector';
 
 export default function BestWayThereModal({ userLocation, onStartTrip, onClose }) {
@@ -42,7 +41,7 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
     return () => clearTimeout(timer);
   }, [searchQuery, userLocation]);
 
-  // Calculate door-to-door transit times across all 4 modes in parallel
+  // Calculate door-to-door transit times across all 4 modes in parallel with OSM Route Relations lookup
   const handleSelectPlace = async (place) => {
     setSelectedPlace(place);
     setSearchResults([]);
@@ -60,9 +59,10 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
       const routePromises = modes.map(async (mode) => {
         try {
           // 1. Find nearest station near user & near destination
-          const [origRes, destRes] = await Promise.all([
+          const [origRes, destRes, osmRouteRelations] = await Promise.all([
             fetchNearestTransitStopToPoint(userLat, userLng, mode),
-            fetchNearestTransitStopToPoint(targetLat, targetLng, mode)
+            fetchNearestTransitStopToPoint(targetLat, targetLng, mode),
+            fetchOsmRouteRelationsBetweenPoints(userLat, userLng, targetLat, targetLng, mode, userLocation?.cityName, place.name)
           ]);
 
           if (!origRes?.nearestStop || !destRes?.nearestStop) return null;
@@ -92,7 +92,8 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
             transitMins,
             walkOriginMins,
             walkDestMins,
-            totalMins
+            totalMins,
+            osmRouteRelations
           };
         } catch (e) {
           return null;
@@ -108,6 +109,7 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
       setIsCalculating(false);
     }
   };
+
 
   const handleStartChosenTrip = (routeOption) => {
     const originStop = {
@@ -325,6 +327,24 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
                         <Footprints size={12} color="var(--text-muted)" />
                         <span>Walk {route.walkDestMins}m</span>
                       </div>
+
+                      {/* OSM Route Relation Number Badges */}
+                      {route.osmRouteRelations && route.osmRouteRelations.length > 0 ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', background: 'rgba(2, 90, 237, 0.15)', padding: '0.4rem 0.65rem', borderRadius: '8px', border: '1px solid rgba(2, 90, 237, 0.3)' }}>
+                          <Tag size={13} color="var(--accent)" />
+                          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--accent)' }}>
+                            Take {route.mode === 'metro' ? 'Metro' : route.mode === 'train' ? 'Train' : 'Bus'} {route.osmRouteRelations.map(r => r.ref).slice(0, 3).join(', ')}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                            ({route.osmRouteRelations[0].name || 'Direct Line'})
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.2rem 0.4rem' }}>
+                          Route number not mapped in OSM for this stop — confirm with driver/conductor
+                        </div>
+                      )}
+
 
                       <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.2rem' }}>
                         <span>Tap to start this trip</span>

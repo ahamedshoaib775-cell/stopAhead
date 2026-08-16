@@ -64,6 +64,18 @@ export default function BestWayThereCard({ data, onStartTrip, onNavigate, onClos
         <span>{stopsCount} stops • ~{data.transitMins || 15} min transit</span>
       </div>
 
+      {/* Matching Route Numbers */}
+      {data.matchedRouteRef ? (
+        <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#025AED', background: 'rgba(2, 90, 237, 0.08)', padding: '0.4rem 0.65rem', borderRadius: '8px', border: '1px solid rgba(2, 90, 237, 0.2)' }}>
+          🚌 Recommended Route: <strong>{data.matchedRouteRef}</strong> ({data.matchedRouteName || 'Direct Connection'})
+        </div>
+      ) : (
+        <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic' }}>
+          Route relation number not available in OSM — check with driver/conductor
+        </div>
+      )}
+
+
       {onStartTrip && (
         <button
           type="button"

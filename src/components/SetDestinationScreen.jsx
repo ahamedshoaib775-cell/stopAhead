@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, AlertTriangle, Bookmark } from 'lucide-react';
-import { searchNominatimPlaces, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute } from '../utils/osmService';
+import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, AlertTriangle, Bookmark, Tag } from 'lucide-react';
+import { searchNominatimPlaces, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
 import { requestBrowserLocation } from '../utils/locationService';
 import LeafletMap from './LeafletMap';
 import LocationPermissionModal from './LocationPermissionModal';
 import CityOverrideModal from './CityOverrideModal';
 import LocationIndicatorChip from './LocationIndicatorChip';
 import TransitModeSelector, { getTransitModeInfo } from './TransitModeSelector';
+
 
 
 export default function SetDestinationScreen({
@@ -36,6 +37,7 @@ export default function SetDestinationScreen({
   const [stationGapInfo, setStationGapInfo] = useState(null);
 
   const [selectedRoute, setSelectedRoute] = useState(null);
+  const [matchedOsmRoutes, setMatchedOsmRoutes] = useState([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
   const [routeError, setRouteError] = useState(null);
 
@@ -46,10 +48,11 @@ export default function SetDestinationScreen({
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [showCityOverrideModal, setShowCityOverrideModal] = useState(false);
 
-  // Automatically calculate live OSRM polyline route when destination stop changes
+  // Automatically calculate live OSRM polyline route & fetch OSM route relations when destination stop changes
   useEffect(() => {
     if (!selectedDestinationStop || !userLocation?.lat || !userLocation?.lng) {
       setSelectedRoute(null);
+      setMatchedOsmRoutes([]);
       setRouteError(null);
       return;
     }
@@ -63,11 +66,16 @@ export default function SetDestinationScreen({
     const endLat = selectedDestinationStop.lat;
     const endLng = selectedDestinationStop.lng;
 
-    fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode)
-      .then((res) => {
+    // Fetch OSRM route & OSM Route Relations in parallel
+    Promise.all([
+      fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode),
+      fetchOsmRouteRelationsBetweenPoints(startLat, startLng, endLat, endLng, transportMode, userLocation?.cityName, selectedDestinationStop.name)
+    ])
+      .then(([res, routeRelations]) => {
         if (!isMounted) return;
         if (res && res.success && res.coordinates) {
           setSelectedRoute(res);
+          setMatchedOsmRoutes(routeRelations || []);
           setRouteError(null);
         } else {
           setRouteError(res?.error || "Couldn't calculate route — try again");
@@ -85,6 +93,7 @@ export default function SetDestinationScreen({
     return () => {
       isMounted = false;
     };
+
   }, [selectedDestinationStop?.id, selectedDestinationStop?.lat, selectedDestinationStop?.lng, userLocation?.lat, userLocation?.lng, transportMode]);
 
   // Remember transit mode selection in LocalStorage
@@ -350,6 +359,28 @@ export default function SetDestinationScreen({
           onChangeLocation={() => setShowCityOverrideModal(true)}
           onRequestPermission={() => setShowPermissionModal(true)}
         />
+
+        {/* OSM Route Relation Number Badges */}
+        {selectedDestinationStop && (
+          <div style={{ marginTop: '-0.2rem' }}>
+            {matchedOsmRoutes && matchedOsmRoutes.length > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', background: 'rgba(2, 90, 237, 0.12)', padding: '0.55rem 0.85rem', borderRadius: '12px', border: '1px solid rgba(2, 90, 237, 0.3)' }}>
+                <Tag size={14} color="var(--accent)" />
+                <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent)' }}>
+                  Take {transportMode === 'metro' ? 'Metro' : transportMode === 'train' ? 'Train' : 'Bus'} {matchedOsmRoutes.map(r => r.ref).slice(0, 4).join(', ')}
+                </span>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                  ({matchedOsmRoutes[0].name || 'Direct Connection'})
+                </span>
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                Route number not mapped in OSM for this stop — confirm with conductor/driver
+              </div>
+            )}
+          </div>
+        )}
+
 
         {/* Prominent Search Input */}
         <div style={{ position: 'relative' }}>
