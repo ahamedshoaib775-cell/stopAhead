@@ -94,8 +94,35 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
   const startTime = Date.now();
   console.log(`[StopAhead AI Lifecycle] 1. Message received at ${new Date().toLocaleTimeString()}: "${userQuery}"`);
 
+  // Step 1: Log exact Supabase Edge Function URL being called
+  const edgeFunctionEndpoint = 'https://lsxgnetnunitodnhdfmi.supabase.co/functions/v1/chatbot';
+  console.log(`[Supabase Edge Function Call]: Calling endpoint -> "${edgeFunctionEndpoint}"`);
+
+  try {
+    const fnResponse = await fetch(edgeFunctionEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer sb_publishable_BfUztLTrag7zxWAYgVxhKQ_D2oCl_wA`
+      },
+      body: JSON.stringify({ message: userQuery, appContext })
+    }).catch(err => ({ status: 0, statusText: err.message, ok: false }));
+
+    if (fnResponse && fnResponse.status === 404) {
+      console.warn(`[Supabase Edge Function 404 Notice]: Function 'chatbot' returned HTTP 404 at "${edgeFunctionEndpoint}". Function exists in code (supabase/functions/chatbot/index.ts) but is not deployed to Supabase Cloud. Executing client-side assistant engine fallback.`);
+    } else if (fnResponse && fnResponse.ok) {
+      const data = await fnResponse.json();
+      if (data && data.responseText) {
+        console.log(`[Supabase Edge Function Success]: HTTP 200 OK from "${edgeFunctionEndpoint}"`);
+        return data;
+      }
+    }
+  } catch (fnErr) {
+    console.warn(`[Supabase Edge Function Exception]: Endpoint "${edgeFunctionEndpoint}" failed:`, fnErr);
+  }
+
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('CHATBOT_TIMEOUT')), 10000);
+    setTimeout(() => reject(new Error('CHATBOT_TIMEOUT')), 25000);
   });
 
   try {
@@ -111,7 +138,7 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
       isError: true,
       cardType: 'error_timeout',
       rawQuery: userQuery,
-      responseText: `This lookup is taking longer than expected. Please try again!`
+      responseText: `I found '${userQuery}', but couldn't reach the transit stop database right now. Try again in a moment, or click retry below.`
     };
   }
 }
@@ -423,15 +450,22 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
     const directCount = allServing.directRoutes ? allServing.directRoutes.length : 0;
     const destCount = allServing.destinationRoutes ? allServing.destinationRoutes.length : 0;
 
-    let summaryText = `📍 Found **${directCount} direct reachable route${directCount === 1 ? '' : 's'}** to **${targetName}** from **${cityName || 'your location'}**.`;
+    const hasLiveOsmMatch = validOptions.some(o => o.matchedRouteRef && o.source === 'OpenStreetMap');
 
-    if (destCount > 0) {
-      summaryText += ` Plus ${destCount} other route${destCount === 1 ? '' : 's'} serving ${targetName}.`;
+    let summaryText = '';
+    if (!hasLiveOsmMatch && (directCount > 0 || destCount > 0)) {
+      summaryText = `📍 I found **${targetName}**, but couldn't reach the live transit stop database right now. Showing known verified routes for this area below.`;
+    } else {
+      summaryText = `📍 Found **${directCount} direct reachable route${directCount === 1 ? '' : 's'}** to **${targetName}** from **${cityName || 'your location'}**.`;
+      if (destCount > 0) {
+        summaryText += ` Plus ${destCount} other route${destCount === 1 ? '' : 's'} serving ${targetName}.`;
+      }
     }
 
     return {
       cardType: 'all_routes',
       isTripRecommendation: true,
+      isLiveOverpassUnavailable: !hasLiveOsmMatch,
       recommendedMode: validOptions[0]?.mode || 'bus',
       recommendedModeLabel: validOptions[0]?.modeLabel || 'Bus',
       targetPlaceName: targetName,

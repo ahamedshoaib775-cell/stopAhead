@@ -177,7 +177,9 @@ export async function searchNominatimWithBroadenedFallback(query, locationBias =
 
 
 const OVERPASS_CACHE = new Map();
-const OVERPASS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes TTL
+const OVERPASS_CACHE_TTL = 10 * 60 * 1000; // 10 minutes TTL
+const OVERPASS_PER_MIRROR_TIMEOUT_MS = 8500; // 8.5 seconds per mirror attempt
+const OVERPASS_TOTAL_TIMEOUT_CEILING_MS = 22000; // 22 seconds hard ceiling total across all mirrors
 
 function getCachedOverpassQuery(cacheKey) {
   const item = OVERPASS_CACHE.get(cacheKey);
@@ -198,9 +200,10 @@ const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-  'https://overpass.nchc.org.tw/api/interpreter'
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
 ];
+
+console.log('Overpass timeout set to:', OVERPASS_PER_MIRROR_TIMEOUT_MS, 'ms per mirror (Total ceiling:', OVERPASS_TOTAL_TIMEOUT_CEILING_MS, 'ms)');
 
 /**
  * Helper to dispatch a single Overpass API query with expanded tag filters strictly per transport mode
@@ -251,13 +254,20 @@ async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
     `;
   }
 
-  const overpassQuery = `[out:json][timeout:3];\n(\n${queryBody}\n);\nout center 35;`;
+  const overpassQuery = `[out:json][timeout:5];\n(\n${queryBody}\n);\nout center 35;`;
+  const overallStartTime = Date.now();
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
+    if (Date.now() - overallStartTime > OVERPASS_TOTAL_TIMEOUT_CEILING_MS) {
+      console.warn(`[StopAhead Overpass] Total ceiling limit reached (${OVERPASS_TOTAL_TIMEOUT_CEILING_MS}ms). Stopping further mirror retries.`);
+      break;
+    }
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2800); // 2.8s fast failover per mirror
+    const timeoutId = setTimeout(() => controller.abort(), OVERPASS_PER_MIRROR_TIMEOUT_MS);
 
     try {
+      console.log('Trying Overpass endpoint:', endpoint);
       const response = await fetch(endpoint, {
         method: 'POST',
         body: `data=${encodeURIComponent(overpassQuery)}`,
@@ -499,12 +509,18 @@ export async function fetchMultiModeAvailability(lat, lng, radiusMeters = 3000) 
 );
 out tags 60;`;
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2800);
+  const batchStartTime = Date.now();
 
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    if (Date.now() - batchStartTime > OVERPASS_TOTAL_TIMEOUT_CEILING_MS) {
+      break;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), OVERPASS_PER_MIRROR_TIMEOUT_MS);
 
     try {
+      console.log('Trying Overpass endpoint:', endpoint);
       const response = await fetch(endpoint, {
         method: 'POST',
         body: `data=${encodeURIComponent(overpassBatchQuery)}`,
@@ -805,12 +821,18 @@ export async function fetchOsmRouteRelationsBetweenPoints(origLat, origLng, dest
 );
 out tags 20;`;
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2800);
+  const relStartTime = Date.now();
 
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    if (Date.now() - relStartTime > OVERPASS_TOTAL_TIMEOUT_CEILING_MS) {
+      break;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), OVERPASS_PER_MIRROR_TIMEOUT_MS);
 
     try {
+      console.log('Trying Overpass endpoint:', endpoint);
       const response = await fetch(endpoint, {
         method: 'POST',
         body: `data=${encodeURIComponent(overpassQuery)}`,
