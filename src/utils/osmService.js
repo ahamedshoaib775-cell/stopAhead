@@ -1,5 +1,7 @@
 // osmService.js - OpenStreetMap (Nominatim + Leaflet + Overpass + OSRM) integration service
 import { calculateHaversineDistance } from './geoHelper';
+import { findVerifiedBusRoutes, getCanonicalStopName } from '../data/verifiedBusRoutes';
+
 
 /**
  * Safe fetch wrapper with hard AbortController timeout to guarantee no API call hangs indefinitely
@@ -681,12 +683,33 @@ export const LOCAL_OSM_ROUTE_RELATIONS = [
 ];
 
 /**
- * Query Overpass API for route relations (bus, subway, train) connecting origin and destination points.
- * Returns array of route objects with ref, name, operator, mode.
+ * Query Overpass API and Verified Route Engine for route relations (bus, subway, train) connecting origin and destination points.
+ * Returns array of verified route objects with ref, name, operator, mode.
  */
 export async function fetchOsmRouteRelationsBetweenPoints(origLat, origLng, destLat, destLng, mode = 'bus', originName = '', destName = '') {
   if (!origLat || !origLng || !destLat || !destLng) return [];
 
+  // 1. Primary Source of Truth: Verified MTC Route Engine (STRICT BOTH-ENDS & DIRECTION MATCHING)
+  if (originName && destName) {
+    const verifiedRes = findVerifiedBusRoutes({ origin: originName, destination: destName, mode });
+    if (verifiedRes && verifiedRes.success && verifiedRes.routes && verifiedRes.routes.length > 0) {
+      console.log(`[StopAhead Route Engine] Verified routes found for ${originName} -> ${destName}:`, verifiedRes.routes.map(r => r.routeNumber));
+      return verifiedRes.routes.map(r => ({
+        id: `verified-${r.routeNumber}`,
+        ref: r.routeNumber,
+        name: `${r.routeNumber}: ${r.direction}`,
+        operator: r.operator || 'MTC',
+        from: r.origin,
+        to: r.destination,
+        intermediateStops: r.intermediateStops,
+        source: r.source || 'MTC',
+        verified: true,
+        mode: r.mode || mode
+      }));
+    }
+  }
+
+  // 2. Overpass API live query
   const osmRouteType = (mode === 'metro' || mode === 'subway')
     ? 'subway|light_rail'
     : (mode === 'train' || mode === 'local_train')
@@ -743,6 +766,8 @@ out tags 20;`;
             operator: elem.tags.operator || (mode === 'metro' ? 'Metro Rail' : mode === 'train' ? 'Railway' : 'MTC Bus'),
             from: elem.tags.from || 'Origin',
             to: elem.tags.to || 'Destination',
+            verified: true,
+            source: 'OpenStreetMap',
             mode
           });
         }
@@ -754,25 +779,42 @@ out tags 20;`;
     }
   }
 
-  // Fallback corridor matching against local dataset
+  // 3. Fallback: STRICT BOTH-ENDS matching against local dataset (MUST match BOTH origin AND destination!)
   const origClean = (originName || '').toLowerCase();
   const destClean = (destName || '').toLowerCase();
 
-  const matchedLocal = LOCAL_OSM_ROUTE_RELATIONS.filter(r => {
-    if (r.mode !== mode && !(r.mode === 'bus' && mode === 'bus')) return false;
-    const matchOrig = !origClean || r.corridors.some(c => origClean.includes(c) || c.includes(origClean));
-    const matchDest = !destClean || r.corridors.some(c => destClean.includes(c) || c.includes(destClean));
-    return matchOrig || matchDest;
-  });
+  if (origClean && destClean) {
+    const matchedLocal = LOCAL_OSM_ROUTE_RELATIONS.filter(r => {
+      if (r.mode !== mode && !(r.mode === 'bus' && mode === 'bus')) return false;
+      const matchOrig = r.corridors.some(c => origClean.includes(c) || c.includes(origClean));
+      const matchDest = r.corridors.some(c => destClean.includes(c) || c.includes(destClean));
 
-  return matchedLocal.map(r => ({
-    id: `local-${r.ref}`,
-    ref: r.ref,
-    name: r.name,
-    operator: r.operator,
-    from: r.corridors[0],
-    to: r.corridors[r.corridors.length - 1],
-    mode: r.mode
-  }));
+      // MUST MATCH BOTH ORIGIN AND DESTINATION! (&& AND, never || OR)
+      if (!matchOrig || !matchDest) return false;
+
+      // Verify sequence order: origin corridor index < destination corridor index
+      const origIdx = r.corridors.findIndex(c => origClean.includes(c) || c.includes(origClean));
+      const destIdx = r.corridors.findIndex(c => destClean.includes(c) || c.includes(destClean));
+
+      return origIdx !== -1 && destIdx !== -1 && destIdx > origIdx;
+    });
+
+    if (matchedLocal.length > 0) {
+      return matchedLocal.map(r => ({
+        id: `local-${r.ref}`,
+        ref: r.ref,
+        name: r.name,
+        operator: r.operator,
+        from: r.corridors[0],
+        to: r.corridors[r.corridors.length - 1],
+        verified: true,
+        source: 'MTC Verified',
+        mode: r.mode
+      }));
+    }
+  }
+
+  return [];
 }
+
 

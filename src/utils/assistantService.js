@@ -296,17 +296,34 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     }
   }
 
-  // 9. MULTI-MODAL TRIP PLANNING / DESTINATION SEARCH INTENT (e.g. "I want to go to Saidapet", "Saidapet Bus Stand")
+  // 9. MULTI-MODAL TRIP PLANNING / DESTINATION SEARCH INTENT (e.g. "I want to go to Saidapet", "I am in Poonamallee and I want to go to Saidapet")
   console.log('[StopAhead AI Lifecycle] 2. Intent: Destination Search & Route Planning');
-  const destQuery = extractTargetPlaceName(rawQuery);
-  console.log('[StopAhead AI Lifecycle] 3. Extracted target place:', destQuery);
+  const pairMatch = extractOriginAndDestination(rawQuery);
+  let effectiveUserLat = userLat;
+  let effectiveUserLng = userLng;
+  let effectiveCityName = cityName || 'Poonamallee';
 
-  if (destQuery && userLat && userLng) {
-    const multiRouteData = await planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQuery);
+  let destQuery = pairMatch.destination || extractTargetPlaceName(rawQuery);
+
+  if (pairMatch.origin) {
+    const origGeo = await geocodeCity(pairMatch.origin).catch(() => null);
+    if (origGeo) {
+      effectiveUserLat = origGeo.lat;
+      effectiveUserLng = origGeo.lng;
+      effectiveCityName = origGeo.name || pairMatch.origin;
+      console.log(`[StopAhead AI Lifecycle] Parsed explicit origin "${pairMatch.origin}" -> (${effectiveUserLat}, ${effectiveUserLng})`);
+    }
+  }
+
+  console.log('[StopAhead AI Lifecycle] 3. Extracted target place:', destQuery, 'Origin:', effectiveCityName);
+
+  if (destQuery && effectiveUserLat && effectiveUserLng) {
+    const multiRouteData = await planBestWayMultiModal(destQuery, effectiveUserLat, effectiveUserLng, effectiveCityName, rawQuery);
     if (multiRouteData) {
       return multiRouteData;
     }
   }
+
 
   // 10. NEARBY STOPS QUERY ("nearest bus stop", "closest train station")
   if (query.includes('nearest') || query.includes('closest') || query.includes('nearby')) {
@@ -385,8 +402,11 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
         const totalDurationMins = transitMins + walkToOrigMins + walkFromDestMins;
         const stopsCount = Math.max(2, Math.round((routeData?.distKm || 4) * 1.5));
 
-        const matchedRouteRef = osmRouteRelations && osmRouteRelations.length > 0 ? osmRouteRelations[0].ref : null;
-        const matchedRouteName = osmRouteRelations && osmRouteRelations.length > 0 ? osmRouteRelations[0].name : null;
+        const matchedRoute = osmRouteRelations && osmRouteRelations.length > 0 ? osmRouteRelations[0] : null;
+        const matchedRouteRef = matchedRoute ? matchedRoute.ref : null;
+        const matchedRouteName = matchedRoute ? matchedRoute.name : null;
+        const source = matchedRoute ? (matchedRoute.source || 'MTC') : null;
+        const intermediateStops = matchedRoute ? matchedRoute.intermediateStops : null;
 
         return {
           mode,
@@ -400,7 +420,9 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
           walkMins: walkFromDestMins,
           totalMins: totalDurationMins,
           matchedRouteRef,
-          matchedRouteName
+          matchedRouteName,
+          source,
+          intermediateStops
         };
       } catch (modeErr) {
         console.warn(`[StopAhead AI Lifecycle] Mode ${mode} error:`, modeErr);
@@ -423,7 +445,16 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
       } else {
         routeText += `Fastest option: **${bestOption.modeLabel}**`;
       }
-      routeText += ` from **${bestOption.originStop.name}** to **${bestOption.destinationStop.name}** — ${bestOption.totalMins} min total door-to-door.`;
+      routeText += ` from **${bestOption.originStop.name}** to **${bestOption.destinationStop.name}**.`;
+
+      if (bestOption.intermediateStops && bestOption.intermediateStops.length > 0) {
+        const viaSummary = bestOption.intermediateStops.slice(0, 4).join(' • ');
+        routeText += `\n\nVia: **${viaSummary}**`;
+      }
+
+      if (bestOption.source) {
+        routeText += `\n\n✓ **Source: ${bestOption.source} (Verified Route)**`;
+      }
 
       return {
         cardType: 'best_way_there',
@@ -439,9 +470,11 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
         totalMins: bestOption.totalMins,
         matchedRouteRef: bestOption.matchedRouteRef,
         matchedRouteName: bestOption.matchedRouteName,
+        source: bestOption.source,
         responseText: routeText
       };
     }
+
 
   } catch (e) {
     console.warn('planBestWayMultiModal error:', e);
@@ -489,3 +522,33 @@ function extractTargetPlaceName(fullQuery, phrasesToStrip = []) {
 
   return cleaned || fullQuery.trim();
 }
+
+/**
+ * Extract both origin AND destination when user prompt specifies "from [Origin] to [Destination]"
+ * or "I am in [Origin] and I want to go to [Destination]"
+ */
+export function extractOriginAndDestination(rawQuery) {
+  if (!rawQuery) return { origin: null, destination: null };
+  const q = rawQuery.trim();
+
+  // Pattern 1: "from [Origin] to [Destination]" or "How do I go from [Origin] to [Destination]"
+  let match = q.match(/(?:from|starting\s+at|starting\s+from)\s+([a-zA-Z0-9\s.]+?)\s+(?:to|towards|for)\s+([a-zA-Z0-9\s.]+)/i);
+  if (match) {
+    return {
+      origin: match[1].trim(),
+      destination: match[2].trim()
+    };
+  }
+
+  // Pattern 2: "I am in [Origin] and I want to go to [Destination]"
+  match = q.match(/(?:i\s+am\s+in|i'm\s+in|im\s+in|located\s+in|at)\s+([a-zA-Z0-9\s.]+?)\s+(?:and\s+)?(?:i\s+want\s+to\s+go\s+to|take\s+me\s+to|heading\s+to)\s+([a-zA-Z0-9\s.]+)/i);
+  if (match) {
+    return {
+      origin: match[1].trim(),
+      destination: match[2].trim()
+    };
+  }
+
+  return { origin: null, destination: null };
+}
+

@@ -66,14 +66,21 @@ export default function BestWayThereCard({ data, onStartTrip, onNavigate, onClos
 
       {/* Matching Route Numbers */}
       {data.matchedRouteRef ? (
-        <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#025AED', background: 'rgba(2, 90, 237, 0.08)', padding: '0.4rem 0.65rem', borderRadius: '8px', border: '1px solid rgba(2, 90, 237, 0.2)' }}>
-          🚌 Recommended Route: <strong>{data.matchedRouteRef}</strong> ({data.matchedRouteName || 'Direct Connection'})
+        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#025AED', background: 'rgba(2, 90, 237, 0.08)', padding: '0.5rem 0.75rem', borderRadius: '10px', border: '1px solid rgba(2, 90, 237, 0.2)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>🚌 Verified Route: <strong>{data.matchedRouteRef}</strong></span>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '0.15rem 0.45rem', borderRadius: '6px', border: '1px solid #bbf7d0' }}>✓ Source: {data.source || 'MTC'}</span>
+          </div>
+          <div style={{ fontSize: '0.73rem', fontWeight: 600, color: '#334155' }}>
+            {data.matchedRouteName || 'Direct Route'}
+          </div>
         </div>
       ) : (
         <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic' }}>
           Route relation number not available in OSM — check with driver/conductor
         </div>
       )}
+
 
 
       {onStartTrip && (
