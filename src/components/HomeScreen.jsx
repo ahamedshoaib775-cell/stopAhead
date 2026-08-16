@@ -1,6 +1,6 @@
 // HomeScreen.jsx - Minimal dashboard rendering user's real saved routes & trip history from Supabase DB
 import React from 'react';
-import { MapPin, ArrowRight, Compass, Radio, Bookmark, Trash2, Clock, CheckCircle } from 'lucide-react';
+import { MapPin, ArrowRight, Compass, Radio, Bookmark, Trash2, Clock, CheckCircle, Sparkles, Search } from 'lucide-react';
 import { getTransitModeInfo } from './TransitModeSelector';
 
 export default function HomeScreen({
@@ -10,7 +10,8 @@ export default function HomeScreen({
   onStartTrip,
   onDeleteSavedRoute,
   onNavigate,
-  onExpandFullScreen
+  onExpandFullScreen,
+  onOpenBestWayThere
 }) {
   const safeSavedRoutes = Array.isArray(savedRoutes) ? savedRoutes : [];
   const safeTripHistory = Array.isArray(tripHistory) ? tripHistory : [];
@@ -23,13 +24,49 @@ export default function HomeScreen({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Hero Welcome Section */}
-      <div style={{ padding: '0.5rem 0' }}>
+      <div style={{ padding: '0.5rem 0 0 0' }}>
         <h2 style={{ fontSize: '2.1rem', fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.03em', marginBottom: '0.6rem' }}>
           Never miss<br />your stop.
         </h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', fontWeight: 500 }}>
           Sleep, read, or listen to music. We’ll wake you before arrival.
         </p>
+      </div>
+
+      {/* Standalone Mode-Agnostic "Best Way There" Search Entry Point */}
+      <div
+        onClick={() => onOpenBestWayThere && onOpenBestWayThere()}
+        style={{
+          background: 'linear-gradient(135deg, rgba(2, 90, 237, 0.15), rgba(124, 58, 237, 0.15))',
+          border: '1px solid rgba(2, 90, 237, 0.35)',
+          borderRadius: '18px',
+          padding: '1rem 1.1rem',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+          transition: 'all 0.2s ease'
+        }}
+        id="btn-best-way-there-search"
+      >
+        <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Sparkles size={22} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            BEST WAY THERE • AUTOMATIC RECOMMENDATION
+          </div>
+          <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)', marginTop: '2px' }}>
+            Where do you want to go?
+          </div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '1px' }}>
+            Compare Bus, Metro & Train routes automatically
+          </div>
+        </div>
+
+        <ArrowRight size={18} color="var(--accent)" />
       </div>
 
       {/* Smart Commute Auto-Suggest Banner */}
@@ -90,9 +127,10 @@ export default function HomeScreen({
         id="btn-set-your-stop"
       >
         <MapPin size={20} />
-        <span>Set Your Stop</span>
+        <span>Set Your Stop (Manual Mode)</span>
         <ArrowRight size={18} style={{ marginLeft: 'auto' }} />
       </button>
+
 
       {/* Active Trip Status Card (If active) */}
       {activeTrip && activeTrip.status !== 'idle' ? (

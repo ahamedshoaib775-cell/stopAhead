@@ -14,6 +14,8 @@ import AutoCheckInModal from './components/AutoCheckInModal';
 import CommunityDisruptionModal from './components/CommunityDisruptionModal';
 import StopReportModal from './components/StopReportModal';
 import ChatbotModal from './components/ChatbotModal';
+import BestWayThereModal from './components/BestWayThereModal';
+
 
 import { supabase } from './utils/supabaseClient';
 import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports } from './utils/dbService';
@@ -40,9 +42,11 @@ export default function App() {
   const [userPosition, setUserPosition] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
 
-  // Full-Screen Map Modal State
+  // Full-Screen Map & Feature Modal States
   const [isFullScreenMapOpen, setIsFullScreenMapOpen] = useState(false);
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
+  const [isBestWayThereOpen, setIsBestWayThereOpen] = useState(false);
+
 
   // Application Settings State
   const [settings, setSettings] = useState(() => {
@@ -656,8 +660,10 @@ export default function App() {
             onDeleteSavedRoute={handleDeleteSavedRoute}
             onNavigate={setActiveTab}
             onExpandFullScreen={() => setIsFullScreenMapOpen(true)}
+            onOpenBestWayThere={() => setIsBestWayThereOpen(true)}
           />
         )}
+
 
         {activeTab === 'set-destination' && (
           <SetDestinationScreen
@@ -781,6 +787,15 @@ export default function App() {
         />
       )}
 
+      {/* Standalone Mode-Agnostic "Best Way There" Modal */}
+      {isBestWayThereOpen && (
+        <BestWayThereModal
+          userLocation={userLocation}
+          onStartTrip={startTrip}
+          onClose={() => setIsBestWayThereOpen(false)}
+        />
+      )}
+
       {/* AI Assistant Chatbot Modal */}
       <ChatbotModal
         isOpen={isChatbotOpen}
@@ -794,6 +809,7 @@ export default function App() {
           transportMode: activeTrip?.transportMode || 'bus'
         }}
       />
+
 
       {/* Floating AI Assistant FAB (visible when chatbot modal is closed) */}
       {!isChatbotOpen && !isFullScreenMapOpen && (
