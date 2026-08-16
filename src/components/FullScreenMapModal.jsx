@@ -1,4 +1,4 @@
-// FullScreenMapModal.jsx - Google Maps-grade full-screen interactive OpenStreetMap live navigation experience
+// FullScreenMapModal.jsx - Full-screen interactive MapLibre & OpenStreetMap live navigation experience
 import React, { useState } from 'react';
 import { ArrowLeft, Search, LocateFixed, Compass, Layers, Navigation, CheckCircle2, MapPin, Gauge } from 'lucide-react';
 import LeafletMap from './LeafletMap';
@@ -204,7 +204,7 @@ export default function FullScreenMapModal({
       </div>
 
       {/* Main OpenStreetMap Canvas */}
-      <div style={{ flex: 1, width: '100%', height: '100%' }}>
+      <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
         <LeafletMap
           originCoords={originCoords}
           destCoords={destCoords}
@@ -213,7 +213,7 @@ export default function FullScreenMapModal({
           stops={mapStops}
           routeCoordinates={route?.coordinates}
           transportMode={activeTrip?.transportMode || 'bus'}
-          height="100vh"
+          height="100%"
           tileStyle={tileStyle}
         />
       </div>
@@ -301,7 +301,7 @@ export default function FullScreenMapModal({
           }}
         >
           <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-            View-only Google Maps Transit Navigation
+            Interactive OpenStreetMap & MapLibre Vector Navigation
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
             Search for your target stop to configure proximity tracking

@@ -1,14 +1,45 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as maplibregl from 'maplibre-gl';
+import * as maplibreglModule from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Navigation, ZoomIn, ZoomOut, AlertTriangle, Layers } from 'lucide-react';
 import { snapPointToPolyline, calculateHaversineDistance } from '../utils/geoHelper';
+
+const maplibregl = maplibreglModule.default || maplibreglModule;
 
 // OpenFreeMap vector tile style endpoints (100% free, zero API key, vector tiles)
 const OPENFREEMAP_STYLES = {
   dark: 'https://tiles.openfreemap.org/styles/dark',
   bright: 'https://tiles.openfreemap.org/styles/bright',
-  liberty: 'https://tiles.openfreemap.org/styles/liberty'
+  liberty: 'https://tiles.openfreemap.org/styles/liberty',
+  standard: 'https://tiles.openfreemap.org/styles/bright',
+  satellite: 'https://tiles.openfreemap.org/styles/dark'
+};
+
+const OSM_RASTER_STYLE = {
+  version: 8,
+  sources: {
+    'osm-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png'
+      ],
+      tileSize: 256,
+      attribution: '&copy; OpenStreetMap contributors'
+    }
+  },
+  layers: [
+    {
+      id: 'osm-tiles-layer',
+      type: 'raster',
+      source: 'osm-tiles',
+      minzoom: 0,
+      maxzoom: 19
+    }
+  ]
 };
 
 export default function MapLibreMap({
@@ -23,7 +54,7 @@ export default function MapLibreMap({
   targetPlaceName = null,
   height = '320px',
   onExpandFullScreen,
-  tileStyle = 'dark'
+  tileStyle = 'bright'
 }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -35,56 +66,35 @@ export default function MapLibreMap({
 
   const [weakGpsInfo, setWeakGpsInfo] = useState(null);
 
-  // Helper to create Mode-Specific Vehicle SVG Marker element
+  // Helper to create Directional GPS Arrow Pointer Marker element for User Location
   const createVehicleMarkerElement = (mode = 'bus', deg = 0) => {
     const el = document.createElement('div');
-    el.className = 'maplibre-vehicle-marker';
-    el.style.width = '36px';
-    el.style.height = '36px';
+    el.className = 'maplibre-user-arrow-marker';
+    el.style.width = '44px';
+    el.style.height = '44px';
     el.style.display = 'flex';
     el.style.alignItems = 'center';
     el.style.justifyContent = 'center';
     el.style.transform = `rotate(${deg}deg)`;
-    el.style.transition = 'transform 0.3s ease';
+    el.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+    el.style.cursor = 'pointer';
 
-    let color = '#025AED';
-    let iconSvg = `
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="11" fill="rgba(2, 90, 237, 0.35)" stroke="#025AED" stroke-width="2"/>
-        <rect x="7" y="6" width="10" height="12" rx="2" fill="#025AED" stroke="#ffffff" stroke-width="1"/>
-        <rect x="8.5" y="8" width="7" height="4" rx="1" fill="#ffffff"/>
-        <circle cx="9.5" cy="15" r="1" fill="#ffffff"/>
-        <circle cx="14.5" cy="15" r="1" fill="#ffffff"/>
-        <path d="M12 2L15 5H9L12 2Z" fill="#00e5ff"/>
+    // Sharp Navigation Directional Arrow with Radar Pulse Animation
+    const iconSvg = `
+      <svg width="44" height="44" viewBox="0 0 36 36" fill="none">
+        <!-- Pulsating GPS Radar Aura Ring -->
+        <circle cx="18" cy="18" r="15" fill="rgba(2, 90, 237, 0.25)" stroke="rgba(2, 90, 237, 0.6)" stroke-width="1.5">
+          <animate attributeName="r" values="11;16;11" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.9;0.35;0.9" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <!-- Inner White Circle Shadow Base -->
+        <circle cx="18" cy="18" r="11" fill="#ffffff" stroke="#025AED" stroke-width="2"/>
+        <!-- Directional Arrow Marker Pointer -->
+        <path d="M18 7L25 24L18 20.5L11 24L18 7Z" fill="#025AED" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+        <!-- Glowing Cyan Core -->
+        <circle cx="18" cy="18" r="2" fill="#00e5ff"/>
       </svg>
     `;
-
-    if (mode === 'metro' || mode === 'subway') {
-      color = '#00e5ff';
-      iconSvg = `
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="11" fill="rgba(0, 229, 255, 0.35)" stroke="#00e5ff" stroke-width="2"/>
-          <path d="M7 8C7 6.5 9 5 12 5C15 5 17 6.5 17 8V15C17 16 16 17 14.5 17H9.5C8 17 7 16 7 15V8Z" fill="#025AED" stroke="#ffffff" stroke-width="1"/>
-          <rect x="8.5" y="7.5" width="7" height="4" rx="1" fill="#ffffff"/>
-          <circle cx="9.5" cy="14" r="1" fill="#00e5ff"/>
-          <circle cx="14.5" cy="14" r="1" fill="#00e5ff"/>
-          <path d="M12 2L15 5H9L12 2Z" fill="#00e5ff"/>
-        </svg>
-      `;
-    } else if (mode === 'train' || mode === 'local_train') {
-      color = '#16a34a';
-      iconSvg = `
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="11" fill="rgba(22, 163, 74, 0.35)" stroke="#16a34a" stroke-width="2"/>
-          <rect x="6" y="7" width="12" height="10" rx="2" fill="#16a34a" stroke="#ffffff" stroke-width="1"/>
-          <rect x="7.5" y="8.5" width="4" height="3.5" rx="0.5" fill="#ffffff"/>
-          <rect x="12.5" y="8.5" width="4" height="3.5" rx="0.5" fill="#ffffff"/>
-          <circle cx="9" cy="14.5" r="1" fill="#ffffff"/>
-          <circle cx="15" cy="14.5" r="1" fill="#ffffff"/>
-          <path d="M12 2L15 5H9L12 2Z" fill="#00e5ff"/>
-        </svg>
-      `;
-    }
 
     el.innerHTML = iconSvg;
     return el;
@@ -159,83 +169,229 @@ export default function MapLibreMap({
     return el;
   };
 
-  // Initialize MapLibre GL Map
+  const leafletMapRef = useRef(null);
+  const leafletPolylineRef = useRef(null);
+
+  // Helper to validate [lat, lng] array coordinates
+  const isValidLatLng = (c) => Array.isArray(c) && c.length >= 2 && typeof c[0] === 'number' && typeof c[1] === 'number' && !isNaN(c[0]) && !isNaN(c[1]);
+
+  // Initialize Map Engine (MapLibre GL JS with Leaflet OpenStreetMap Fallback)
   useEffect(() => {
     if (!mapContainerRef.current) return;
+    const container = mapContainerRef.current;
+    if (!document.body.contains(container)) return;
 
-    const initialCenter = currentCoords
-      ? [currentCoords[1], currentCoords[0]]
-      : destCoords
-      ? [destCoords[1], destCoords[0]]
-      : [80.2707, 13.0827]; // Chennai default [lng, lat]
+    let initialCenter = [80.2707, 13.0827]; // Chennai default [lng, lat]
+    if (isValidLatLng(currentCoords)) {
+      initialCenter = [currentCoords[1], currentCoords[0]];
+    } else if (isValidLatLng(destCoords)) {
+      initialCenter = [destCoords[1], destCoords[0]];
+    } else if (isValidLatLng(originCoords)) {
+      initialCenter = [originCoords[1], originCoords[0]];
+    }
 
-    const selectedStyle = OPENFREEMAP_STYLES[tileStyle] || OPENFREEMAP_STYLES.dark;
+    const selectedStyle = OPENFREEMAP_STYLES[tileStyle] || OPENFREEMAP_STYLES.liberty || OSM_RASTER_STYLE;
 
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: selectedStyle,
-      center: initialCenter,
-      zoom: 14,
-      attributionControl: true
-    });
+    let map = null;
+    let isLeafletMode = false;
 
-    mapInstanceRef.current = map;
+    try {
+      if (maplibregl.supported && maplibregl.supported()) {
+        map = new maplibregl.Map({
+          container,
+          style: selectedStyle,
+          center: initialCenter,
+          zoom: 14,
+          attributionControl: true
+        });
+        mapInstanceRef.current = map;
+      } else {
+        isLeafletMode = true;
+      }
+    } catch (err) {
+      console.warn('MapLibre init error, engaging Leaflet fallback:', err);
+      isLeafletMode = true;
+    }
 
-    map.on('load', () => {
-      // Add Route Source & Layers
-      if (!map.getSource('route-source')) {
-        map.addSource('route-source', {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: []
+    if (isLeafletMode) {
+      try {
+        if (container && container._leaflet_id) {
+          try {
+            delete container._leaflet_id;
+          } catch (e) {}
+        }
+        container.innerHTML = '';
+        console.log('[StopAhead Map] Initializing Leaflet 2D OpenStreetMap fallback...');
+        const lMap = L.map(container, {
+          center: [initialCenter[1], initialCenter[0]],
+          zoom: 14,
+          zoomControl: true
+        });
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(lMap);
+
+        leafletMapRef.current = lMap;
+        setTimeout(() => lMap.invalidateSize(), 200);
+      } catch (lErr) {
+        console.error('Leaflet fallback init error:', lErr);
+      }
+    }
+
+    if (map) {
+      map.on('error', (e) => {
+        console.warn('MapLibre error:', e);
+        if (e && e.error && (e.error.message || '').includes('style')) {
+          map.setStyle(OSM_RASTER_STYLE);
+        }
+      });
+
+      map.on('load', () => {
+        console.log('map loaded - MapLibre GL instance initialized successfully');
+        map.resize();
+
+        // Add Route Source & Layers
+        if (!map.getSource('route-source')) {
+          map.addSource('route-source', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: []
+              }
             }
-          }
-        });
+          });
 
-        // Glow Layer
-        map.addLayer({
-          id: 'route-glow-layer',
-          type: 'line',
-          source: 'route-source',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': 'rgba(2, 90, 237, 0.35)',
-            'line-width': 10
-          }
-        });
+          // Glow Layer
+          map.addLayer({
+            id: 'route-glow-layer',
+            type: 'line',
+            source: 'route-source',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            paint: {
+              'line-color': 'rgba(2, 90, 237, 0.35)',
+              'line-width': 10
+            }
+          });
 
-        // Core Polyline Layer
-        map.addLayer({
-          id: 'route-layer',
-          type: 'line',
-          source: 'route-source',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': '#025AED',
-            'line-width': 5
-          }
-        });
+          // Core Polyline Layer
+          map.addLayer({
+            id: 'route-layer',
+            type: 'line',
+            source: 'route-source',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            paint: {
+              'line-color': '#025AED',
+              'line-width': 5
+            }
+          });
+        }
+      });
+    }
+
+    // Request animation frame and delayed timeout to ensure map canvas recalculates after DOM layout completes
+    const rafId = requestAnimationFrame(() => {
+      if (mapInstanceRef.current) mapInstanceRef.current.resize();
+    });
+    const timerId = setTimeout(() => {
+      if (mapInstanceRef.current) mapInstanceRef.current.resize();
+    }, 100);
+
+    // ResizeObserver to resize MapLibre canvas when container dimensions change (modals/tabs/flex layout)
+    const resizeObserver = new ResizeObserver(() => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.resize();
       }
     });
+    resizeObserver.observe(container);
 
     return () => {
-      map.remove();
-      mapInstanceRef.current = null;
+      cancelAnimationFrame(rafId);
+      clearTimeout(timerId);
+      resizeObserver.disconnect();
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+      if (leafletMapRef.current) {
+        leafletMapRef.current.remove();
+        leafletMapRef.current = null;
+      }
     };
   }, []);
+
+  const leafletUserMarkerRef = useRef(null);
 
   // Update Route Polyline & Markers
   useEffect(() => {
     const map = mapInstanceRef.current;
+    const lMap = leafletMapRef.current;
+
+    if (!map && !lMap) return;
+
+    if (lMap) {
+      let routePoints = routeCoordinates;
+      if (!routePoints || routePoints.length === 0) {
+        if (originCoords && destCoords) {
+          routePoints = [originCoords, destCoords];
+        }
+      }
+
+      if (routePoints && routePoints.length > 0) {
+        if (leafletPolylineRef.current) {
+          lMap.removeLayer(leafletPolylineRef.current);
+        }
+        leafletPolylineRef.current = L.polyline(routePoints, { color: '#025AED', weight: 5 }).addTo(lMap);
+        try {
+          lMap.fitBounds(leafletPolylineRef.current.getBounds(), { padding: [30, 30] });
+        } catch (e) {}
+      }
+
+      // User Arrow Marker in Leaflet
+      let userPos = currentCoords;
+      if (!userPos && originCoords) userPos = originCoords;
+
+      if (userPos && isValidLatLng(userPos)) {
+        const userArrowSvg = `
+          <div style="transform: rotate(${heading || 0}deg); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5)); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+            <svg width="44" height="44" viewBox="0 0 36 36" fill="none">
+              <circle cx="18" cy="18" r="15" fill="rgba(2, 90, 237, 0.25)" stroke="rgba(2, 90, 237, 0.6)" stroke-width="1.5">
+                <animate attributeName="r" values="11;16;11" dur="2s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.9;0.35;0.9" dur="2s" repeatCount="indefinite"/>
+              </circle>
+              <circle cx="18" cy="18" r="11" fill="#ffffff" stroke="#025AED" stroke-width="2"/>
+              <path d="M18 7L25 24L18 20.5L11 24L18 7Z" fill="#025AED" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+              <circle cx="18" cy="18" r="2" fill="#00e5ff"/>
+            </svg>
+          </div>
+        `;
+        const arrowIcon = L.divIcon({
+          html: userArrowSvg,
+          className: 'leaflet-user-arrow-marker-icon',
+          iconSize: [44, 44],
+          iconAnchor: [22, 22]
+        });
+
+        if (!leafletUserMarkerRef.current) {
+          leafletUserMarkerRef.current = L.marker([userPos[0], userPos[1]], { icon: arrowIcon }).addTo(lMap);
+        } else {
+          leafletUserMarkerRef.current.setLatLng([userPos[0], userPos[1]]);
+          leafletUserMarkerRef.current.setIcon(arrowIcon);
+        }
+      }
+
+      return;
+    }
+
     if (!map) return;
 
     // 1. Update Route Polyline
@@ -345,11 +501,18 @@ export default function MapLibreMap({
       });
     }
 
-    // 7. Auto Fit Bounds
+    // 7. Auto Fit Bounds around all points & route polyline
     const allBoundsPoints = [];
-    if (activePosition) allBoundsPoints.push([activePosition[1], activePosition[0]]);
-    if (destCoords) allBoundsPoints.push([destCoords[1], destCoords[0]]);
-    if (targetPlaceCoords) allBoundsPoints.push([targetPlaceCoords[1], targetPlaceCoords[0]]);
+    if (activePosition && isValidLatLng(activePosition)) allBoundsPoints.push([activePosition[1], activePosition[0]]);
+    if (destCoords && isValidLatLng(destCoords)) allBoundsPoints.push([destCoords[1], destCoords[0]]);
+    if (targetPlaceCoords && isValidLatLng(targetPlaceCoords)) allBoundsPoints.push([targetPlaceCoords[1], targetPlaceCoords[0]]);
+    if (originCoords && isValidLatLng(originCoords)) allBoundsPoints.push([originCoords[1], originCoords[0]]);
+
+    if (routeCoordinates && routeCoordinates.length > 0) {
+      routeCoordinates.forEach((pt) => {
+        if (isValidLatLng(pt)) allBoundsPoints.push([pt[1], pt[0]]);
+      });
+    }
 
     if (allBoundsPoints.length >= 2) {
       const bounds = new maplibregl.LngLatBounds();
@@ -382,13 +545,16 @@ export default function MapLibreMap({
     }
   };
 
+  const resolvedHeight = height || '320px';
+
   return (
     <div
       ref={mapContainerRef}
       onClick={() => onExpandFullScreen && onExpandFullScreen()}
       style={{
         width: '100%',
-        height,
+        height: resolvedHeight,
+        minHeight: resolvedHeight === '100%' || resolvedHeight === '100vh' ? '300px' : resolvedHeight,
         borderRadius: '20px',
         overflow: 'hidden',
         border: '1px solid var(--border-color, rgba(2, 90, 237, 0.3))',

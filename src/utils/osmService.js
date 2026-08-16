@@ -1,4 +1,5 @@
 // osmService.js - OpenStreetMap (Nominatim + Leaflet + Overpass + OSRM) integration service
+import { calculateHaversineDistance } from './geoHelper';
 
 /**
  * Nominatim Free Geocoding Search (OpenStreetMap)
@@ -60,93 +61,165 @@ export async function searchNominatimPlaces(query, locationBias = null) {
 }
 
 /**
- * Overpass API Live OpenStreetMap Query for nearby transit stops strictly filtered by transport mode
+ * Helper to dispatch a single Overpass API query with expanded tag filters
  */
-export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2500, transportMode = 'bus') {
-  if (!lat || !lng) return [];
+async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
+  let queryBody = '';
 
-  try {
-    let filterTag = '[highway=bus_stop]';
-    if (transportMode === 'train') filterTag = '[railway~"station|halt"]';
-    else if (transportMode === 'metro' || transportMode === 'subway') filterTag = '[railway~"station|subway_entrance"][station=subway]';
-    else if (transportMode === 'ferry') filterTag = '[amenity=ferry_terminal]';
-
-    const overpassQuery = `
-      [out:json][timeout:12];
-      (
-        node${filterTag}(around:${radiusMeters},${lat},${lng});
-      );
-      out body 25;
+  if (transportMode === 'train') {
+    queryBody = `
+      node["railway"~"station|halt|platform"](around:${radiusMeters},${lat},${lng});
+      way["railway"~"station|halt|platform"](around:${radiusMeters},${lat},${lng});
+      node["public_transport"~"station|platform"]["railway"](around:${radiusMeters},${lat},${lng});
+      node["public_transport"="station"](around:${radiusMeters},${lat},${lng});
     `;
+  } else if (transportMode === 'metro' || transportMode === 'subway') {
+    queryBody = `
+      node["railway"~"station|subway_entrance|subway"](around:${radiusMeters},${lat},${lng});
+      way["railway"~"station|subway_entrance|subway"](around:${radiusMeters},${lat},${lng});
+      node["station"="subway"](around:${radiusMeters},${lat},${lng});
+    `;
+  } else if (transportMode === 'ferry') {
+    queryBody = `
+      node["amenity"="ferry_terminal"](around:${radiusMeters},${lat},${lng});
+      way["amenity"="ferry_terminal"](around:${radiusMeters},${lat},${lng});
+    `;
+  } else {
+    // Bus (default)
+    queryBody = `
+      node["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});
+      way["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});
+      node["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});
+      way["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});
+    `;
+  }
 
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: `data=${encodeURIComponent(overpassQuery)}`,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
+  const overpassQuery = `[out:json][timeout:4];\n(\n${queryBody}\n);\nout center 35;`;
 
-    if (!response.ok) {
-      throw new Error(`Overpass API error: ${response.statusText}`);
-    }
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter'
+  ];
 
-    const data = await response.json();
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-    if (data.elements && data.elements.length > 0) {
-      const parsedStops = data.elements
-        .filter((node) => node.tags && (node.tags.name || node.tags['name:en']))
-        .map((node) => {
-          const stopLat = node.lat;
-          const stopLng = node.lon;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: `data=${encodeURIComponent(overpassQuery)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: controller.signal
+      });
 
-          // Calculate distance in km
-          const radlat1 = (Math.PI * lat) / 180;
-          const radlat2 = (Math.PI * stopLat) / 180;
-          const theta = lng - stopLng;
-          const radtheta = (Math.PI * theta) / 180;
-          let dist = Math.sin(radlat1) * Math.sin(radlat2) + Math.cos(radlat1) * Math.cos(radlat2) * Math.cos(radtheta);
-          dist = Math.min(1, dist);
-          dist = Math.acos(dist);
-          dist = (dist * 180) / Math.PI;
-          dist = dist * 60 * 1.1515 * 1.609344;
+      clearTimeout(timeoutId);
+      if (!response.ok) continue;
 
-          const stopName = node.tags.name || node.tags['name:en'] || 'Transit Stop';
+      const data = await response.json();
 
-          return {
-            id: `overpass-${node.id}`,
+      if (data.elements && data.elements.length > 0) {
+        const seenNames = new Set();
+        const parsedStops = [];
+
+        for (const elem of data.elements) {
+          if (!elem.tags) continue;
+          const stopName = elem.tags.name || elem.tags['name:en'] || elem.tags['name:ta'];
+          if (!stopName || seenNames.has(stopName.toLowerCase())) continue;
+
+          const stopLat = elem.lat || (elem.center && elem.center.lat);
+          const stopLng = elem.lon || (elem.center && elem.center.lon);
+
+          if (!stopLat || !stopLng) continue;
+
+          const distKm = parseFloat(calculateHaversineDistance(lat, lng, stopLat, stopLng).toFixed(1));
+          seenNames.add(stopName.toLowerCase());
+
+          parsedStops.push({
+            id: `overpass-${elem.type}-${elem.id}`,
             name: stopName,
-            description: node.tags.operator || node.tags.network || `${transportMode.toUpperCase()} Station`,
+            description: elem.tags.operator || elem.tags.network || `${transportMode.toUpperCase()} Station`,
             lat: stopLat,
             lng: stopLng,
-            distKm: parseFloat(dist.toFixed(1)),
+            distKm,
             transportMode
-          };
-        })
-        .sort((a, b) => a.distKm - b.distKm);
+          });
+        }
 
-      if (parsedStops.length > 0) return parsedStops;
+        parsedStops.sort((a, b) => a.distKm - b.distKm);
+        return parsedStops;
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Overpass API Live OpenStreetMap Query for nearby transit stops strictly filtered by transport mode
+ * High-speed parallel fallback via Nominatim if Overpass endpoints rate limit or timeout
+ */
+export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000, transportMode = 'bus') {
+  if (!lat || !lng) {
+    const emptyResult = [];
+    emptyResult.radiusUsedKm = Math.round(radiusMeters / 1000);
+    return emptyResult;
+  }
+
+  // 1. Try fast Overpass API query at requested radius & expanded 5km radius
+  try {
+    const stops = await executeOverpassQuery(lat, lng, radiusMeters, transportMode);
+    if (stops && stops.length > 0) {
+      stops.radiusUsedKm = Math.round(radiusMeters / 1000);
+      return stops;
     }
 
-    // Fallback query for mode-specific stations
+    if (radiusMeters < 5000) {
+      const stops5k = await executeOverpassQuery(lat, lng, 5000, transportMode);
+      if (stops5k && stops5k.length > 0) {
+        stops5k.radiusUsedKm = 5;
+        return stops5k;
+      }
+    }
+  } catch (err) {
+    console.warn('[StopAhead Overpass] Overpass query notice:', err.message);
+  }
+
+  // 2. High-speed Nominatim fallback (< 800ms) with location bias
+  try {
     let fallbackQuery = `${transportMode} station`;
-    if (transportMode === 'metro') fallbackQuery = 'metro station';
+    if (transportMode === 'metro' || transportMode === 'subway') fallbackQuery = 'metro station';
     else if (transportMode === 'train') fallbackQuery = 'railway station';
     else if (transportMode === 'bus') fallbackQuery = 'bus stop';
 
-    const locationBias = { lat, lng, delta: 0.12, bounded: true };
+    const locationBias = { lat, lng, delta: 0.15, bounded: true };
     const fallbackPlaces = await searchNominatimPlaces(fallbackQuery, locationBias);
-    return fallbackPlaces.map((p) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description,
-      lat: p.lat,
-      lng: p.lng,
-      distKm: 1.5,
-      transportMode
-    }));
+    if (fallbackPlaces && fallbackPlaces.length > 0) {
+      const stops = fallbackPlaces.map((p) => {
+        const distKm = parseFloat(calculateHaversineDistance(lat, lng, p.lat, p.lng).toFixed(1));
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description || `${transportMode.toUpperCase()} Station`,
+          lat: p.lat,
+          lng: p.lng,
+          distKm,
+          transportMode
+        };
+      });
+      stops.sort((a, b) => a.distKm - b.distKm);
+      stops.radiusUsedKm = 10;
+      return stops;
+    }
   } catch (err) {
-    console.warn('Overpass API error, falling back to Nominatim:', err.message);
-    return [];
+    console.warn('[StopAhead Overpass] Nominatim fallback notice:', err.message);
   }
+
+  const emptyResult = [];
+  emptyResult.radiusUsedKm = 10;
+  return emptyResult;
 }
 
 /**
@@ -313,15 +386,21 @@ export async function geocodeCity(cityName) {
  * Calculate Route Polyline & Distance between Coordinates (Free OSRM)
  */
 export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode = 'bus') {
-  try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+  if (!startLat || !startLng || !endLat || !endLng) {
+    return { success: false, error: 'Invalid start/end coordinates for routing' };
+  }
 
+  const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+  console.log(`[StopAhead OSRM Routing URL]: ${url}`);
+
+  try {
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error('OSRM routing network error');
+      throw new Error(`OSRM HTTP error ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log('[StopAhead OSRM Routing Payload]:', data);
 
     if (data.routes && data.routes.length > 0) {
       const route = data.routes[0];
@@ -342,9 +421,9 @@ export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transpo
         coordinates
       };
     }
-    throw new Error('No route polyline returned from OSRM');
+    throw new Error('No route geometry returned from OSRM endpoint');
   } catch (err) {
-    console.warn('OSRM routing error, using straight-line calculation:', err.message);
+    console.warn('[StopAhead OSRM] API network error, using straight-line fallback:', err.message);
 
     const radlat1 = (Math.PI * startLat) / 180;
     const radlat2 = (Math.PI * endLat) / 180;
@@ -359,6 +438,7 @@ export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transpo
 
     return {
       success: true,
+      isFallback: true,
       distKm: fallbackDist,
       durationMins: Math.max(2, Math.ceil(fallbackDist * 2.2)),
       coordinates: [[startLat, startLng], [endLat, endLng]]

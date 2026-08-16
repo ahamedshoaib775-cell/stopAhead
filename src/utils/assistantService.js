@@ -1,43 +1,64 @@
-// assistantService.js - Data-Driven Live AI Assistant & Trip Planning Engine for StopAhead
-import { calculateHaversineDistance, formatDistance, formatTimeRemaining } from './geoHelper';
-import { searchNominatimPlaces, fetchNearestTransitStopToPoint, fetchOSRMRoute } from './osmService';
-
-/**
- * Main query processor for StopAhead Assistant
- * Parses natural language query against live app context
- */
 export async function processAssistantQuery(userQuery, appContext = {}) {
   if (!userQuery || !userQuery.trim()) {
     return {
-      responseText: "Hi! Ask me anything like 'How do I get to Phoenix Mall?', 'How far is Anna Nagar?', or 'What is my ETA?'"
+      responseText: "Hi! I'm your StopAhead AI Assistant. Ask me anything like 'How do I get to Phoenix Mall?', 'What's my ETA?', or 'How does the proximity alarm work?'"
     };
   }
 
-  const query = userQuery.trim().toLowerCase();
+  const rawQuery = userQuery.trim();
+  const query = rawQuery.toLowerCase();
   const { userPosition, userLocation, nearbyStops = [], activeTrip = null, transportMode = 'bus' } = appContext;
 
   const userLat = userPosition?.lat || userLocation?.lat;
   const userLng = userPosition?.lng || userLocation?.lng;
 
-  // 0. INTENT: Conversational Trip Planning ("How do I get to Phoenix Mall?", "I want to go to Anna Nagar", "Take me to T Nagar")
+  // 1. GREETINGS & APP CAPABILITY INTRO
   if (
+    query === 'hi' ||
+    query === 'hello' ||
+    query === 'hey' ||
+    query.startsWith('hi ') ||
+    query.startsWith('hello ') ||
+    query.includes('who are you') ||
+    query.includes('what can you do') ||
+    query === 'help' ||
+    query.includes('help me')
+  ) {
+    return {
+      responseText: `👋 Hello! I'm StopAhead AI, your smart transit assistant for ${userLocation?.cityName || 'your city'}.\n\nHere is what I can do for you:\n• 🗺️ Plan optimal routes to any place ('How do I get to T Nagar?')\n• 📍 Find nearest transit stops ('Where is the closest bus stop?')\n• ⏱️ Check live ETA & remaining stops ('What is my ETA?')\n• 🔔 Monitor arrival alarms ('When will my alarm trigger?')\n• ⚙️ Explain app features (SOS, Voice alerts in Tamil/English, Dark mode)`
+    };
+  }
+
+  // 2. TRIP & ROUTE PLANNING INTENT ("How do I get to X?", "Take me to Y", "Route to Z", "Marina Beach")
+  const isRoutingRequest =
     query.includes('want to go to') ||
     query.includes('how do i get to') ||
+    query.includes('how to get to') ||
     query.includes('how to reach') ||
     query.includes('take me to') ||
     query.includes('route to') ||
     query.includes('navigate to') ||
     query.includes('directions to') ||
-    (query.includes('go to') && !query.includes('alarm'))
-  ) {
-    const destQuery = extractTargetPlaceName(userQuery, [
+    query.includes('way to') ||
+    query.includes('path to') ||
+    query.includes('travel to') ||
+    query.includes('head to') ||
+    (query.includes('go to') && !query.includes('alarm') && !query.includes('settings'));
+
+  if (isRoutingRequest) {
+    const destQuery = extractTargetPlaceName(rawQuery, [
       'want to go to',
       'how do i get to',
+      'how to get to',
       'how to reach',
       'take me to',
       'route to',
       'navigate to',
       'directions to',
+      'way to',
+      'path to',
+      'travel to',
+      'head to',
       'go to'
     ]);
 
@@ -49,140 +70,144 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
     }
   }
 
-  // 1. INTENT: Stops Remaining ("How many stops until my destination?")
-  if (query.includes('stop') && (query.includes('how many') || query.includes('remaining') || query.includes('left') || query.includes('until'))) {
+  // 3. REMAINING STOPS INTENT ("How many stops left?", "When do I get off?")
+  if (
+    (query.includes('stop') || query.includes('station')) &&
+    (query.includes('how many') || query.includes('remaining') || query.includes('left') || query.includes('until') || query.includes('next'))
+  ) {
     if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
-      const stopsLeft = activeTrip.remainingStopsCount ?? 2;
+      const stopsLeft = activeTrip.stopsRemaining ?? activeTrip.remainingStopsCount ?? 2;
       const destName = activeTrip.destinationStop.name || 'your destination';
-      return { responseText: `You have ${stopsLeft} stop${stopsLeft === 1 ? '' : 's'} remaining until ${destName}.` };
+      return {
+        responseText: `🚌 You have ${stopsLeft} stop${stopsLeft === 1 ? '' : 's'} remaining until ${destName}. Get ready to prepare your exit!`
+      };
     }
-    return { responseText: "You don't have an active trip running right now. Pick a destination on the 'Set Destination' tab to track remaining stops!" };
+    return {
+      responseText: "You don't have an active trip running right now. Pick a destination on the 'Set Destination' screen to track live remaining stops!"
+    };
   }
 
-  // 2. INTENT: ETA / Arrival Time ("What's my ETA?")
-  if (query.includes('eta') || query.includes('arrive') || query.includes('arrival') || query.includes('when will i get')) {
+  // 4. ETA & ARRIVAL TIME INTENT ("What's my ETA?", "When will I arrive?")
+  if (query.includes('eta') || query.includes('arrive') || query.includes('arrival') || query.includes('when will i get') || query.includes('time remaining')) {
     if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
-      const etaMins = activeTrip.etaMins ?? 12;
-      const distKm = activeTrip.remainingDistKm ?? 4.5;
+      const etaMins = activeTrip.timeRemainingMins ?? activeTrip.etaMins ?? 10;
+      const distKm = activeTrip.distanceRemainingKm ?? activeTrip.remainingDistKm ?? 2.5;
       const destName = activeTrip.destinationStop.name || 'your destination';
-      return { responseText: `Your ETA at ${destName} is in approximately ${etaMins} minutes (${distKm} km remaining).` };
+      return {
+        responseText: `⏱️ Your estimated arrival at ${destName} is in approximately ${etaMins} minute${etaMins === 1 ? '' : 's'} (${distKm} km remaining).`
+      };
     }
-    return { responseText: "No active trip currently running. Select a target stop to track live ETA!" };
+    return {
+      responseText: "No active trip currently running. Select a destination to track your live ETA in real-time!"
+    };
   }
 
-  // 3. INTENT: Alarm Trigger Countdown ("How long until my alarm goes off?")
-  if (query.includes('alarm') || query.includes('alert') || query.includes('wake') || query.includes('trigger')) {
+  // 5. PROXIMITY ALARM TRIGGER INTENT ("When will my alarm trigger?", "How does the alarm work?")
+  if (query.includes('alarm') || query.includes('alert') || query.includes('wake') || query.includes('trigger') || query.includes('ring')) {
+    if (query.includes('how') && (query.includes('work') || query.includes('set') || query.includes('use'))) {
+      return {
+        responseText: "🔔 **StopAhead Proximity Alarm**\n\nStopAhead tracks your live GPS position in the background as you commute on a bus, train, or metro. When you reach your set threshold (e.g. 2 stops or 1 km before destination), it triggers loud audio chimes, strong vibration patterns, and spoken voice alerts so you never miss your stop!"
+      };
+    }
+
     if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
       const threshType = activeTrip.thresholdType || 'stops';
       const threshVal = activeTrip.thresholdValue || 2;
       const destName = activeTrip.destinationStop.name || 'your destination';
 
       if (threshType === 'stops') {
-        const stopsRemaining = activeTrip.remainingStopsCount ?? 3;
+        const stopsRemaining = activeTrip.stopsRemaining ?? 3;
         const stopsUntilAlarm = Math.max(0, stopsRemaining - threshVal);
-        return { responseText: `Your alarm is set for ${threshVal} stop${threshVal === 1 ? '' : 's'} before ${destName}. It will trigger in approximately ${stopsUntilAlarm} stop${stopsUntilAlarm === 1 ? '' : 's'}.` };
+        return {
+          responseText: `🔔 Your alarm is set for ${threshVal} stop${threshVal === 1 ? '' : 's'} before ${destName}. It will trigger in approximately ${stopsUntilAlarm} stop${stopsUntilAlarm === 1 ? '' : 's'}!`
+        };
       } else if (threshType === 'distance') {
-        const distRemaining = activeTrip.remainingDistKm ?? 4.2;
-        const distUntilAlarm = Math.max(0, (distRemaining - threshVal)).toFixed(1);
-        return { responseText: `Your alarm is set for ${threshVal} km before ${destName}. It will trigger in approximately ${distUntilAlarm} km.` };
+        const distRemaining = activeTrip.distanceRemainingKm ?? 3.5;
+        const distUntilAlarm = Math.max(0, distRemaining - threshVal).toFixed(1);
+        return {
+          responseText: `🔔 Your alarm is set for ${threshVal} km before ${destName}. It will trigger in approximately ${distUntilAlarm} km.`
+        };
       } else {
-        const etaMins = activeTrip.etaMins ?? 15;
+        const etaMins = activeTrip.timeRemainingMins ?? 12;
         const minsUntilAlarm = Math.max(1, etaMins - threshVal);
-        return { responseText: `Your alarm is set for ${threshVal} minutes before arrival. It will trigger in approximately ${minsUntilAlarm} mins.` };
+        return {
+          responseText: `🔔 Your alarm is set for ${threshVal} minute${threshVal === 1 ? '' : 's'} before arrival. It will trigger in approximately ${minsUntilAlarm} min.`
+        };
       }
     }
-    return { responseText: "Set a destination first to enable your arrival proximity alarm!" };
+    return {
+      responseText: "Set a destination on the 'Set Destination' tab to enable your custom arrival proximity alarm!"
+    };
   }
 
-  // 4. INTENT: Is there a stop near [Place]? ("Is there a bus stop near Phoenix Mall?")
-  if ((query.includes('is there a') || query.includes('are there')) && (query.includes('stop') || query.includes('station')) && query.includes('near')) {
-    const targetPlaceQuery = extractTargetPlaceName(userQuery, ['near']);
-    if (targetPlaceQuery && userLat && userLng) {
-      try {
-        const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
-        const places = await searchNominatimPlaces(targetPlaceQuery, locationBias);
-        if (places && places.length > 0) {
-          const matchedPlace = places[0];
-          const result = await fetchNearestTransitStopToPoint(matchedPlace.lat, matchedPlace.lng, transportMode);
-          if (result && result.nearestStop) {
-            const stop = result.nearestStop;
-            return { responseText: `Yes! Near ${matchedPlace.name}, the closest ${transportMode.toUpperCase()} stop is ${stop.name} (${stop.distKm} km away).` };
-          }
-        }
-      } catch (e) {}
+  // 6. NEARBY TRANSIT STOPS INTENT ("Where is the nearest stop?")
+  if ((query.includes('nearest') || query.includes('closest') || query.includes('nearby')) && (query.includes('stop') || query.includes('station') || query.includes('bus') || query.includes('metro') || query.includes('train'))) {
+    if (nearbyStops && nearbyStops.length > 0) {
+      const topStop = nearbyStops[0];
+      const distStr = formatDistance(topStop.distKm || 0.3);
+      return {
+        responseText: `📍 The nearest ${transportMode.toUpperCase()} stop to your current location is **${topStop.name}** (${distStr} away).`
+      };
     }
+    return {
+      responseText: `Searching OpenStreetMap for nearby ${transportMode} stops in ${userLocation?.cityName || 'your location'}... Try selecting a mode on the 'Set Destination' screen!`
+    };
   }
 
-  // 5. INTENT: Distance to Stop / Place ("How far is X from my location?")
-  if (query.includes('how far') || query.includes('distance to') || query.includes('far is') || query.includes('where is')) {
-    const targetName = extractTargetPlaceName(userQuery, ['how far is', 'distance to', 'far is', 'where is']);
-
-    if (userLat && userLng) {
-      if (nearbyStops && nearbyStops.length > 0 && targetName) {
-        const foundLocal = nearbyStops.find(
-          (s) => s.name.toLowerCase().includes(targetName) || targetName.includes(s.name.toLowerCase())
-        );
-        if (foundLocal) {
-          const distKm = calculateHaversineDistance(userLat, userLng, foundLocal.lat, foundLocal.lng);
-          const walkMins = Math.round(distKm * 12);
-          return { responseText: `${foundLocal.name} is ${formatDistance(distKm)} from your current location, about a ${walkMins}-minute walk.` };
-        }
-      }
-
-      if (activeTrip?.destinationStop && targetName && activeTrip.destinationStop.name.toLowerCase().includes(targetName)) {
-        const dest = activeTrip.destinationStop;
-        const distKm = calculateHaversineDistance(userLat, userLng, dest.lat, dest.lng);
-        const walkMins = Math.round(distKm * 12);
-        return { responseText: `${dest.name} is ${formatDistance(distKm)} from your current location (${walkMins} min walk).` };
-      }
-
-      if (targetName && targetName.length >= 2) {
-        try {
-          const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
-          const places = await searchNominatimPlaces(targetName, locationBias);
-          if (places && places.length > 0) {
-            const p = places[0];
-            const distKm = calculateHaversineDistance(userLat, userLng, p.lat, p.lng);
-            const walkMins = Math.round(distKm * 12);
-            return { responseText: `${p.name} is ${formatDistance(distKm)} from your current location, about a ${walkMins}-minute walk.` };
-          }
-        } catch (e) {}
-      }
-
-      if (nearbyStops && nearbyStops.length > 0) {
-        const closest = nearbyStops[0];
-        return { responseText: `The nearest ${transportMode.toUpperCase()} stop (${closest.name}) is ${formatDistance(closest.distKm)} from your location.` };
-      }
-    }
+  // 7. APP FEATURES & FAQ KNOWLEDGE BASE
+  if (query.includes('sos') || query.includes('emergency') || query.includes('safety') || query.includes('contact')) {
+    return {
+      responseText: "🚨 **Emergency SOS Feature**\n\nTap the red 'Emergency SOS' button on the header bar anytime. It generates an automated SMS tracking link with your live coordinates and sends emergency alerts to your saved family contacts."
+    };
   }
 
-  // 6. INTENT: General App Features & Help FAQs
-  if (query.includes('sos') || query.includes('emergency') || query.includes('contact')) {
-    return { responseText: "Tap the red 'Emergency SOS' button on the header to send live tracking SMS alerts and call contacts." };
-  }
-  if (query.includes('share') || query.includes('link')) {
-    return { responseText: "Tap 'Share Live Trip' on the Active Trip screen to generate a live tracking link for friends and family." };
-  }
-  if (query.includes('contrast') || query.includes('theme') || query.includes('dark')) {
-    return { responseText: "You can toggle Dark Mode and High-Contrast vision support anytime in the 'Settings' tab!" };
-  }
-  if (query.includes('sound') || query.includes('vibrate') || query.includes('chime')) {
-    return { responseText: "Go to Settings to choose your alert style (Sound, Vibration, or Both) and pick chime alarm sounds." };
+  if (query.includes('share') || query.includes('tracking link') || query.includes('live trip')) {
+    return {
+      responseText: "📲 **Share Live Trip**\n\nDuring an active trip, tap 'Share Live Trip' on the Active Journey screen to copy a live tracking URL or share it directly via WhatsApp/SMS to friends and family."
+    };
   }
 
-  // Fallback check if user typed a location name directly without trigger words
-  if (userLat && userLng && query.length >= 3) {
-    const directTrip = await planTripFromConversation(userQuery, appContext);
+  if (query.includes('voice') || query.includes('tamil') || query.includes('english') || query.includes('language') || query.includes('speak')) {
+    return {
+      responseText: "🗣️ **Voice Alerts (English & Tamil)**\n\nStopAhead speaks voice announcements as you approach your stop! You can toggle Voice Alerts and switch between English and Tamil (தமிழ்) anytime in the 'Settings' tab."
+    };
+  }
+
+  if (query.includes('city') || query.includes('location permission') || query.includes('override')) {
+    return {
+      responseText: "🌆 **City & GPS Selector**\n\nTap the blue location chip at the top of the 'Set Destination' screen to manually choose your city (Chennai, Mumbai, Delhi, Bengaluru, Hyderabad, Kolkata, etc.) or grant live browser GPS access."
+    };
+  }
+
+  if (query.includes('simulat') || query.includes('test') || query.includes('offline') || query.includes('demo')) {
+    return {
+      responseText: "🎮 **GPS Simulation & Demo Mode**\n\nYou can test how the alarm triggers without moving! In Settings, toggle between 'Simulated GPS' (moves automatically along the road) and 'Real GPS' (uses live hardware location)."
+    };
+  }
+
+  if (query.includes('contrast') || query.includes('theme') || query.includes('dark') || query.includes('font')) {
+    return {
+      responseText: "🎨 **High Contrast & Dark Theme**\n\nStopAhead supports Dark Mode and high-contrast vision accessibility. Customize theme modes and font sizes in the 'Settings' tab!"
+    };
+  }
+
+  // 8. DIRECT LOCATION / PLACE SEARCH FALLBACK (e.g. "Phoenix Mall", "Anna Nagar", "Marina Beach")
+  if (userLat && userLng && rawQuery.length >= 3) {
+    const directTrip = await planTripFromConversation(rawQuery, appContext);
     if (directTrip) return directTrip;
   }
 
-  // Default Fallback
+  // 9. DEFAULT HELPFUL FALLBACK
   if (userLat && userLng && nearbyStops && nearbyStops.length > 0) {
     const topStop = nearbyStops[0];
-    return { responseText: `You're currently in ${userLocation?.cityName || 'your area'}. Nearest ${transportMode.toUpperCase()} stop is ${topStop.name} (${formatDistance(topStop.distKm)} away). How can I assist your trip?` };
+    return {
+      responseText: `I'm here to help you navigate ${userLocation?.cityName || 'your city'}!\n\n• Nearest ${transportMode.toUpperCase()} stop: ${topStop.name} (${formatDistance(topStop.distKm)})\n• Ask me: 'How do I get to Phoenix Mall?', 'What's my ETA?', or 'How to set alarm?'`
+    };
   }
 
-  return { responseText: "I can help calculate exact distances, ETAs, remaining stops, and plan complete journeys! Try asking: 'How do I get to Phoenix Mall?' or 'How far is T Nagar?'" };
+  return {
+    responseText: "I can help calculate exact distances, ETAs, remaining stops, and plan complete journeys! Try asking: 'How do I get to Phoenix Mall?' or 'What's my ETA?'"
+  };
 }
 
 /**

@@ -37,16 +37,16 @@ export default function EmergencySOSModal({ activeTrip, userPosition, userLocati
     const lat = userPosition?.lat || userLocation?.lat || activeTrip?.destinationStop?.lat || 13.0827;
     const lng = userPosition?.lng || userLocation?.lng || activeTrip?.destinationStop?.lng || 80.2707;
     const destName = activeTrip?.destinationStop?.name || 'Destination';
-    const googleMapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+    const osmLocationUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
 
-    const textMessage = `EMERGENCY SOS ALERT from StopAhead!\nI need assistance.\nLocation: ${googleMapsUrl}\nDestination: ${destName}\nStatus: Active Journey Tracker`;
+    const textMessage = `EMERGENCY SOS ALERT from StopAhead!\nI need assistance.\nLocation: ${osmLocationUrl}\nDestination: ${destName}\nStatus: Active Journey Tracker`;
 
     // 1. Try Web Share API if supported
     if (navigator.share) {
       navigator.share({
         title: 'EMERGENCY SOS ALERT - StopAhead',
         text: textMessage,
-        url: googleMapsUrl
+        url: osmLocationUrl
       }).catch(() => {});
     }
 

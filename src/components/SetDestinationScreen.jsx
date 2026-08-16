@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, Bookmark } from 'lucide-react';
-import { searchNominatimPlaces, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint } from '../utils/osmService';
+import { searchNominatimPlaces, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute } from '../utils/osmService';
 import { requestBrowserLocation } from '../utils/locationService';
 import LeafletMap from './LeafletMap';
 import LocationPermissionModal from './LocationPermissionModal';
@@ -14,7 +14,8 @@ export default function SetDestinationScreen({
   defaultSettings,
   userLocation,
   onUpdateUserLocation,
-  onSaveRoute
+  onSaveRoute,
+  onExpandFullScreen
 }) {
   const [transportMode, setTransportMode] = useState(() => {
     return localStorage.getItem('stopahead_last_transit_mode') || 'bus';
@@ -24,6 +25,7 @@ export default function SetDestinationScreen({
   const [osmSearchResults, setOsmSearchResults] = useState([]);
   const [nearbyStops, setNearbyStops] = useState([]);
   const [isLoadingNearby, setIsLoadingNearby] = useState(false);
+  const [searchedRadiusKm, setSearchedRadiusKm] = useState(2);
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
 
   const [selectedOriginStop, setSelectedOriginStop] = useState(null);
@@ -32,6 +34,10 @@ export default function SetDestinationScreen({
   const [resolvingNearestStop, setResolvingNearestStop] = useState(false);
   const [stationGapInfo, setStationGapInfo] = useState(null);
 
+  const [selectedRoute, setSelectedRoute] = useState(null);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+  const [routeError, setRouteError] = useState(null);
+
   const [thresholdType, setThresholdType] = useState(defaultSettings?.defaultThresholdType || 'stops');
   const [thresholdValue, setThresholdValue] = useState(defaultSettings?.defaultThresholdValue || 2);
 
@@ -39,14 +45,56 @@ export default function SetDestinationScreen({
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [showCityOverrideModal, setShowCityOverrideModal] = useState(false);
 
+  // Automatically calculate live OSRM polyline route when destination stop changes
+  useEffect(() => {
+    if (!selectedDestinationStop || !userLocation?.lat || !userLocation?.lng) {
+      setSelectedRoute(null);
+      setRouteError(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingRoute(true);
+    setRouteError(null);
+
+    const startLat = selectedOriginStop?.lat || userLocation.lat;
+    const startLng = selectedOriginStop?.lng || userLocation.lng;
+    const endLat = selectedDestinationStop.lat;
+    const endLng = selectedDestinationStop.lng;
+
+    fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode)
+      .then((res) => {
+        if (!isMounted) return;
+        if (res && res.success && res.coordinates) {
+          setSelectedRoute(res);
+          setRouteError(null);
+        } else {
+          setRouteError(res?.error || "Couldn't calculate route — try again");
+        }
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.warn('SetDestinationScreen OSRM fetch error:', err);
+        setRouteError("Couldn't calculate route — try again");
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingRoute(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedDestinationStop?.id, selectedDestinationStop?.lat, selectedDestinationStop?.lng, userLocation?.lat, userLocation?.lng, transportMode]);
+
   // Remember transit mode selection in LocalStorage
   const handleSelectTransportMode = (modeId) => {
     setTransportMode(modeId);
     localStorage.setItem('stopahead_last_transit_mode', modeId);
     setSelectedDestinationStop(null); // Reset selection to pick mode-matched stop
     setSelectedTargetPlace(null);
+    setSelectedRoute(null);
     setStationGapInfo(null);
-    loadNearbyStops(2500, modeId);
+    loadNearbyStops(2000, modeId);
   };
 
   // Auto-prompt location explanation modal on initial mount if userLocation is null
@@ -60,35 +108,15 @@ export default function SetDestinationScreen({
   }, [userLocation]);
 
   // Fetch real nearby transit stops via live OpenStreetMap Overpass API filtered by transportMode
-  const loadNearbyStops = async (radiusMeters = 2500, currentMode = transportMode) => {
+  const loadNearbyStops = async (radiusMeters = 2000, currentMode = transportMode) => {
     if (!userLocation?.lat || !userLocation?.lng) return;
 
     setIsLoadingNearby(true);
     try {
-      let stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, radiusMeters, currentMode);
-
-      // Auto-expand to 6km if tight 2.5km returned 0 stops
-      if (stops.length === 0 && radiusMeters <= 2500) {
-        stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, 6000, currentMode);
-      }
-
-      // If still 0, fallback to querying Nominatim for local transit places in city
-      if (stops.length === 0) {
-        const locationBias = { lat: userLocation.lat, lng: userLocation.lng, delta: 0.15, bounded: true };
-        const queryTerm = userLocation.cityName ? `${userLocation.cityName} ${currentMode} station` : `${currentMode} station`;
-        const fallbackPlaces = await searchNominatimPlaces(queryTerm, locationBias);
-        stops = fallbackPlaces.map((p) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description || 'OpenStreetMap Transit Node',
-          lat: p.lat,
-          lng: p.lng,
-          distKm: 1.5,
-          transportMode: currentMode
-        }));
-      }
-
+      const stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, radiusMeters, currentMode);
+      setSearchedRadiusKm(stops.radiusUsedKm || Math.round(radiusMeters / 1000));
       setNearbyStops(stops);
+
       if (stops.length > 0) {
         setSelectedOriginStop({
           id: 'current-pos',
@@ -262,18 +290,34 @@ export default function SetDestinationScreen({
       />
 
       {/* Route Map Preview */}
-      <div>
-        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
-          Route Map Preview
+      <div style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border-color)', position: 'relative', width: '100%', minHeight: '170px' }}>
+        <div style={{ padding: '0.4rem 0.75rem', background: 'rgba(255,255,255,0.03)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Route Map Preview</span>
+          {isLoadingRoute ? (
+            <span style={{ color: 'var(--accent)', fontSize: '0.7rem' }}>Calculating OSRM route...</span>
+          ) : routeError ? (
+            <span style={{ color: '#ef4444', fontSize: '0.7rem' }}>⚠️ {routeError}</span>
+          ) : selectedRoute?.distKm ? (
+            <span style={{ color: 'var(--accent)', fontSize: '0.7rem' }}>{selectedRoute.distKm} km • ~{selectedRoute.durationMins} mins</span>
+          ) : null}
         </div>
+
+        {routeError && (
+          <div style={{ position: 'absolute', inset: 0, top: '28px', zIndex: 10, background: 'rgba(15, 20, 31, 0.9)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', textAlign: 'center', fontSize: '0.82rem', fontWeight: 700 }}>
+            <span>⚠️ {routeError}</span>
+          </div>
+        )}
+
         <LeafletMap
           currentCoords={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : null}
           originCoords={selectedOriginStop ? [selectedOriginStop.lat, selectedOriginStop.lng] : null}
           destCoords={selectedDestinationStop ? [selectedDestinationStop.lat, selectedDestinationStop.lng] : null}
           stops={nearbyStops}
+          routeCoordinates={selectedRoute?.coordinates || []}
           transportMode={transportMode}
           targetPlaceCoords={selectedTargetPlace ? [selectedTargetPlace.lat, selectedTargetPlace.lng] : null}
           height="170px"
+          onExpandFullScreen={onExpandFullScreen}
         />
       </div>
 
@@ -415,20 +459,20 @@ export default function SetDestinationScreen({
               >
                 <AlertCircle size={22} color="var(--accent)" style={{ marginBottom: '0.4rem' }} />
                 <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
-                  No nearby stops found in immediate 2 km area
+                  No {transportMode} stations found within {searchedRadiusKm || 10} km of {userLocation?.cityName || 'your location'}
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
-                  No transit stops were detected near {userLocation?.cityName || 'your location'} within 2 km. Tap below to expand radius or search by station name.
+                  OpenStreetMap search tried up to {searchedRadiusKm || 10} km radius around {userLocation?.cityName || 'Poonamallee'}. Tap below to expand radius or search by station name.
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                   <button
                     className="btn-secondary"
-                    onClick={() => loadNearbyStops(10000)}
+                    onClick={() => loadNearbyStops(15000)}
                     style={{ fontSize: '0.8rem', padding: '0.55rem' }}
                   >
                     <Compass size={14} />
-                    <span>Expand Search Radius (10 km)</span>
+                    <span>Expand Search Radius (15 km)</span>
                   </button>
 
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, marginTop: '0.2rem' }}>

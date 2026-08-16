@@ -92,10 +92,12 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
   };
 
   const quickPrompts = [
-    { label: '🗺️ How do I get to Phoenix Mall?', query: 'How do I get to Phoenix Mall?' },
-    { label: '📍 Distance to nearest stop?', query: 'How far is the nearest stop from my location?' },
+    { label: '🗺️ Route to Phoenix Mall', query: 'How do I get to Phoenix Mall?' },
+    { label: '📍 Nearest transit stop', query: 'Where is the nearest stop?' },
     { label: "⏱️ What's my ETA?", query: "What's my ETA?" },
-    { label: '🔔 When will my alarm trigger?', query: 'How long until my alarm goes off?' }
+    { label: '🔔 Alarm trigger time', query: 'When will my alarm trigger?' },
+    { label: '🗣️ Tamil / English Voice Alerts', query: 'How do voice alerts work?' },
+    { label: '🚨 Emergency SOS', query: 'How does Emergency SOS work?' }
   ];
 
   return (

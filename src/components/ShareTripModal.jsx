@@ -11,7 +11,7 @@ export default function ShareTripModal({ activeTrip, userPosition, userLocation,
   const lat = userPosition?.lat || userLocation?.lat || activeTrip?.destinationStop?.lat || 13.0827;
   const lng = userPosition?.lng || userLocation?.lng || activeTrip?.destinationStop?.lng || 80.2707;
 
-  const shareUrl = `https://maps.google.com/?q=${lat},${lng}`;
+  const shareUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
   const shareText = `Track my live StopAhead journey to ${destName}! ETA: ~${timeRemainingMins} mins (${stopsRemaining} stops left). Live map: ${shareUrl}`;
 
   const handleCopyLink = () => {

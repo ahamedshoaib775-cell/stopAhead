@@ -26,7 +26,7 @@ export function speakVoiceAlert(text = "Your stop is approaching. Please prepare
     } else {
       utterance.lang = 'en-US';
       targetVoice = voices.find(
-        (v) => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Daniel'))
+        (v) => v.lang.startsWith('en') && (v.name.includes('System') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Daniel'))
       ) || voices.find((v) => v.lang.startsWith('en'));
     }
 

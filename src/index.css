@@ -444,3 +444,23 @@ input[type="range"]::-webkit-slider-thumb {
 .leaflet-tooltip-bottom:before {
   border-bottom-color: rgba(15, 20, 31, 0.92) !important;
 }
+
+/* MapLibre GL JS Container & Canvas Styles */
+.maplibregl-map {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  font-family: var(--font-family, sans-serif);
+}
+
+.maplibregl-canvas-container,
+.maplibregl-canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-bottom-left {
+  z-index: 350 !important;
+}
+

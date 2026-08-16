@@ -667,6 +667,7 @@ export default function App() {
             userLocation={userLocation}
             onUpdateUserLocation={setUserLocation}
             onSaveRoute={handleSaveRoute}
+            onExpandFullScreen={() => setIsFullScreenMapOpen(true)}
           />
         )}
 
