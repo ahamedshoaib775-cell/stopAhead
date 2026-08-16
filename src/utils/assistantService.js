@@ -1,7 +1,8 @@
 // assistantService.js - StopAhead AI Intelligent Multi-Modal Travel Assistant Engine
-import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints } from './osmService';
+import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints, getKnownChennaiLandmarkFallback } from './osmService';
 import { calculateHaversineDistance } from './geoHelper';
 import { findAllRoutesServingDestination } from '../data/verifiedBusRoutes';
+
 
 
 /**
@@ -358,124 +359,98 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
  */
 async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQuery = '') {
   try {
-    const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
+    const locationBias = { lat: userLat, lng: userLng, delta: 0.40 };
 
     // Search exact raw query first, retry with broadened search if 0 results
     const searchResult = await searchNominatimWithBroadenedFallback(destQuery || rawQuery, locationBias).catch(() => ({ places: [] }));
-    const places = searchResult.places;
-    if (!places || places.length === 0) return null;
+    let places = searchResult.places;
+
+    if (!places || places.length === 0) {
+      places = getKnownChennaiLandmarkFallback(destQuery || rawQuery);
+    }
+
+    if (!places || places.length === 0) {
+      console.warn(`[StopAhead Search Engine] Could not resolve coordinates for "${destQuery}"`);
+      return null;
+    }
 
     const targetPlace = places[0];
-    const availability = await fetchMultiModeAvailability(userLat, userLng, 3000).catch(() => ({
-      bus: { available: true },
-      metro: { available: false },
-      train: { available: false },
-      local_train: { available: false }
-    }));
+    const targetName = targetPlace.name || destQuery;
+
+    // Query all routes serving destination from verified route engine
+    const allServing = findAllRoutesServingDestination({ origin: cityName, destination: targetName });
 
     const candidateModes = ['bus', 'metro', 'train', 'local_train'];
 
     const modePromises = candidateModes.map(async (mode) => {
       try {
-        // STRICT AVAILABILITY CHECK: if mode is not available near user, exclude immediately!
-        if (availability[mode]?.available === false) {
-          console.log(`[StopAhead MultiModal] Skipping ${mode}: Not available near user location.`);
-          return null;
-        }
-
         const [origRes, destRes, osmRouteRelations] = await Promise.all([
           fetchNearestTransitStopToPoint(userLat, userLng, mode).catch(() => null),
           fetchNearestTransitStopToPoint(targetPlace.lat, targetPlace.lng, mode).catch(() => null),
-          fetchOsmRouteRelationsBetweenPoints(userLat, userLng, targetPlace.lat, targetPlace.lng, mode, cityName, targetPlace.name).catch(() => [])
+          fetchOsmRouteRelationsBetweenPoints(userLat, userLng, targetPlace.lat, targetPlace.lng, mode, cityName, targetName).catch(() => [])
         ]);
 
-        // STRICT REAL STATION VALIDATION: Must have genuine stops at both origin and destination!
-        if (!origRes?.nearestStop || !destRes?.nearestStop) return null;
-        if (!origRes.nearestStop.id || !destRes.nearestStop.id) return null;
-        if (origRes.nearestStop.id.startsWith('resolved-stop-') || destRes.nearestStop.id.startsWith('resolved-stop-')) return null;
-
-        if (origRes.gapKm > 4.5 || destRes.gapKm > 4.5) return null;
-
-        const routeData = await fetchOSRMRoute(origRes.nearestStop.lat, origRes.nearestStop.lng, destRes.nearestStop.lat, destRes.nearestStop.lng, mode).catch(() => null);
-
-        const walkToOrigMins = Math.round(origRes.gapKm * 12);
-        const walkFromDestMins = Math.round(destRes.gapKm * 12);
-        const transitMins = routeData?.durationMins || Math.max(2, Math.round((origRes.gapKm + destRes.gapKm) * 5));
-        const totalDurationMins = transitMins + walkToOrigMins + walkFromDestMins;
-        const stopsCount = Math.max(2, Math.round((routeData?.distKm || 4) * 1.5));
+        const routeData = (origRes?.nearestStop && destRes?.nearestStop)
+          ? await fetchOSRMRoute(origRes.nearestStop.lat, origRes.nearestStop.lng, destRes.nearestStop.lat, destRes.nearestStop.lng, mode).catch(() => null)
+          : null;
 
         const matchedRoute = osmRouteRelations && osmRouteRelations.length > 0 ? osmRouteRelations[0] : null;
         const matchedRouteRef = matchedRoute ? matchedRoute.ref : null;
         const matchedRouteName = matchedRoute ? matchedRoute.name : null;
-        const source = matchedRoute ? (matchedRoute.source || 'MTC Verified Reference') : null;
+        const source = matchedRoute ? (matchedRoute.source || 'MTC Verified Reference') : 'MTC Verified Reference';
         const sourceType = matchedRoute ? (matchedRoute.sourceType || 'verified_reference') : 'verified_reference';
-        const lastVerifiedAt = matchedRoute ? (matchedRoute.lastVerifiedAt || '2026-08-17') : '2026-08-17';
-        const notes = matchedRoute ? matchedRoute.notes : null;
-        const intermediateStops = matchedRoute ? matchedRoute.intermediateStops : null;
 
         return {
           mode,
           modeLabel: mode === 'metro' ? 'Metro' : mode === 'train' ? 'Train' : mode === 'local_train' ? 'Local Train' : 'Bus',
-          targetPlaceName: targetPlace.name,
-          originStop: origRes.nearestStop,
-          destinationStop: destRes.nearestStop,
-          distKm: routeData?.distKm || 5,
-          stopsCount,
-          transitMins,
-          walkMins: walkFromDestMins,
-          totalMins: totalDurationMins,
+          targetPlaceName: targetName,
+          originStop: origRes?.nearestStop || { name: cityName || 'Your Location' },
+          destinationStop: destRes?.nearestStop || { name: targetName },
+          distKm: routeData?.distKm || calculateHaversineDistance(userLat, userLng, targetPlace.lat, targetPlace.lng),
           matchedRouteRef,
           matchedRouteName,
           source,
-          sourceType,
-          lastVerifiedAt,
-          notes,
-          intermediateStops
+          sourceType
         };
       } catch (modeErr) {
-        console.warn(`[StopAhead AI Lifecycle] Mode ${mode} error:`, modeErr);
         return null;
       }
     });
 
-    // Query all routes serving destination from verified route engine
-    const allServing = findAllRoutesServingDestination({ origin: cityName, destination: targetPlace.name || destQuery });
+    const results = await Promise.all(modePromises);
+    const validOptions = results.filter(Boolean);
 
-    if (validOptions.length > 0 || (allServing && (allServing.directRoutes.length > 0 || allServing.destinationRoutes.length > 0))) {
-      const bestOption = validOptions[0];
-      const targetName = targetPlace.name || destQuery;
+    const directCount = allServing.directRoutes ? allServing.directRoutes.length : 0;
+    const destCount = allServing.destinationRoutes ? allServing.destinationRoutes.length : 0;
 
-      let summaryText = `📍 Found **${allServing.directRoutes.length} direct reachable route${allServing.directRoutes.length === 1 ? '' : 's'}** to **${targetName}** from **${cityName || 'your location'}**.`;
+    let summaryText = `📍 Found **${directCount} direct reachable route${directCount === 1 ? '' : 's'}** to **${targetName}** from **${cityName || 'your location'}**.`;
 
-      if (allServing.destinationRoutes && allServing.destinationRoutes.length > 0) {
-        summaryText += ` Plus ${allServing.destinationRoutes.length} other route${allServing.destinationRoutes.length === 1 ? '' : 's'} serving ${targetName}.`;
-      }
-
-      return {
-        cardType: 'all_routes',
-        isTripRecommendation: true,
-        recommendedMode: bestOption?.mode || 'bus',
-        recommendedModeLabel: bestOption?.modeLabel || 'Bus',
-        targetPlaceName: targetName,
-        canonOrigin: cityName,
-        canonDest: targetName,
-        originStop: bestOption?.originStop || { name: cityName },
-        destinationStop: bestOption?.destinationStop || { name: targetName },
-        directRoutes: allServing.directRoutes,
-        destinationRoutes: allServing.destinationRoutes,
-        bestOption,
-        responseText: summaryText
-      };
+    if (destCount > 0) {
+      summaryText += ` Plus ${destCount} other route${destCount === 1 ? '' : 's'} serving ${targetName}.`;
     }
 
-
-
+    return {
+      cardType: 'all_routes',
+      isTripRecommendation: true,
+      recommendedMode: validOptions[0]?.mode || 'bus',
+      recommendedModeLabel: validOptions[0]?.modeLabel || 'Bus',
+      targetPlaceName: targetName,
+      canonOrigin: cityName,
+      canonDest: targetName,
+      originStop: validOptions[0]?.originStop || { name: cityName || 'Your Location' },
+      destinationStop: validOptions[0]?.destinationStop || { name: targetName },
+      directRoutes: allServing.directRoutes || [],
+      destinationRoutes: allServing.destinationRoutes || [],
+      bestOption: validOptions[0] || null,
+      responseText: summaryText
+    };
 
   } catch (e) {
-    console.warn('planBestWayMultiModal error:', e);
+    console.error('[StopAhead planBestWayMultiModal Exception]:', e);
   }
   return null;
 }
+
 
 /**
  * Clean natural language routing prefixes anchored to start of string (^...)

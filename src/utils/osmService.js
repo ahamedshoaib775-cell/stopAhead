@@ -24,65 +24,113 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   }
 }
 
+const KNOWN_CHENNAI_LANDMARKS = [
+  { name: 'Phoenix Marketcity (Phoenix Mall)', aliases: ['phoenix mall', 'phoenix marketcity', 'phoenix'], lat: 12.9918, lng: 80.2171, description: 'Velachery Main Road, Chennai' },
+  { name: 'Saidapet', aliases: ['saidapet', 'saidapet bus stand'], lat: 13.0232, lng: 80.2238, description: 'Saidapet, Chennai' },
+  { name: 'T. Nagar (Thyagaraya Nagar)', aliases: ['t nagar', 't. nagar', 'thyagaraya nagar'], lat: 13.0418, lng: 80.2341, description: 'T. Nagar, Chennai' },
+  { name: 'Marina Beach', aliases: ['marina beach', 'marina', 'light house'], lat: 13.0600, lng: 80.2800, description: 'Kamarajar Salai, Marina Beach' },
+  { name: 'Poonamallee', aliases: ['poonamallee', 'poonamallee bus terminus'], lat: 13.0485, lng: 80.0995, description: 'Poonamallee, Chennai' },
+  { name: 'Chennai Central', aliases: ['chennai central', 'central station', 'park town'], lat: 13.0827, lng: 80.2707, description: 'EVR Periyar Salai, Chennai' },
+  { name: 'Guindy', aliases: ['guindy', 'guindy station'], lat: 13.0067, lng: 80.2020, description: 'Guindy, Chennai' },
+  { name: 'Porur', aliases: ['porur', 'porur junction'], lat: 13.0382, lng: 80.1565, description: 'Porur, Chennai' },
+  { name: 'Koyambedu CMBT', aliases: ['koyambedu', 'cmbt'], lat: 13.0694, lng: 80.1948, description: 'CMBT Terminus, Chennai' },
+  { name: 'Broadway Terminus', aliases: ['broadway', 'parrys'], lat: 13.0891, lng: 80.2854, description: 'Broadway, Chennai' }
+];
+
+export function getKnownChennaiLandmarkFallback(query) {
+  if (!query) return [];
+  const q = query.toLowerCase().trim();
+
+  const match = KNOWN_CHENNAI_LANDMARKS.find((l) =>
+    l.aliases.some((alias) => q === alias || q.includes(alias) || alias.includes(q))
+  );
+
+  if (match) {
+    console.log(`[StopAhead Landmark Fallback]: Resolved "${query}" -> ${match.name} (${match.lat}, ${match.lng})`);
+    return [{
+      id: `known-landmark-${match.lat}-${match.lng}`,
+      name: match.name,
+      description: match.description,
+      code: match.name.slice(0, 3).toUpperCase(),
+      lat: match.lat,
+      lng: match.lng,
+      type: 'landmark',
+      isKnownFallback: true
+    }];
+  }
+
+  return [];
+}
+
 /**
  * Nominatim Free Geocoding Search (OpenStreetMap)
  * Searches across ALL OSM place types (shops, malls, landmarks, addresses, businesses)
- * Biased/restricted to user's current city/area using viewbox + bounded=1
+ * Biased/restricted to user's current city/area using viewbox
  */
 export async function searchNominatimPlaces(query, locationBias = null) {
   if (!query || !query.trim()) return [];
 
+  const cleanQ = query.trim();
+  console.log(`[StopAhead Geocoding Request]: Searching Nominatim for "${cleanQ}"`);
+
   try {
-    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1`;
+    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQ)}&limit=10&addressdetails=1`;
 
     if (locationBias && locationBias.lat && locationBias.lng) {
-      const delta = locationBias.delta || 0.15; // ~15 km bounding box around user's live coordinates
+      const delta = locationBias.delta || 0.40; // ~40 km wide city viewbox
       const minLng = locationBias.lng - delta;
       const maxLng = locationBias.lng + delta;
       const minLat = locationBias.lat - delta;
       const maxLat = locationBias.lat + delta;
 
-      url += `&viewbox=${minLng},${maxLat},${maxLng},${minLat}`;
-      if (locationBias.bounded) {
-        url += '&bounded=1';
-      }
+      url += `&viewbox=${minLng.toFixed(4)},${maxLat.toFixed(4)},${maxLng.toFixed(4)},${minLat.toFixed(4)}`;
+      // Do NOT set bounded=1 so city landmarks outside bounding box are not strictly dropped
     }
+
+    console.log(`[StopAhead Geocoding URL]: ${url}`);
 
     const response = await fetchWithTimeout(url, {
       headers: {
         'Accept-Language': 'en',
-        'User-Agent': 'StopAheadTransitApp/2.0'
+        'User-Agent': 'StopAheadTransitApp/2.0 (contact@stopahead.app)'
       }
-    }, 3500);
+    }, 4500);
+
+    console.log(`[StopAhead Geocoding HTTP Status]: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
-      throw new Error(`Nominatim error: ${response.statusText}`);
+      throw new Error(`Nominatim API returned HTTP ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log(`[StopAhead Geocoding Raw Response]: ${data ? data.length : 0} items returned for "${cleanQ}"`);
 
+    if (data && data.length > 0) {
+      return data.map((item) => {
+        const mainName = item.name || item.display_name.split(',')[0];
+        const details = item.display_name.split(',').slice(1, 3).join(',').trim();
 
-    return data.map((item) => {
-      const mainName = item.name || item.display_name.split(',')[0];
-      const details = item.display_name.split(',').slice(1, 3).join(',').trim();
-
-      return {
-        id: item.place_id ? String(item.place_id) : `osm-${item.lat}-${item.lon}`,
-        name: mainName,
-        description: details || item.type || 'OpenStreetMap Place',
-        code: mainName.slice(0, 3).toUpperCase(),
-        lat: parseFloat(item.lat),
-        lng: parseFloat(item.lon),
-        type: item.type || item.class || 'place',
-        isOsm: true,
-        isPlace: true
-      };
-    });
+        return {
+          id: item.place_id ? String(item.place_id) : `osm-${item.lat}-${item.lon}`,
+          name: mainName,
+          description: details || item.type || 'OpenStreetMap Place',
+          code: mainName.slice(0, 3).toUpperCase(),
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lon),
+          type: item.type || item.class || 'place',
+          isOsm: true,
+          isPlace: true
+        };
+      });
+    }
   } catch (err) {
-    console.warn('Nominatim API search error:', err.message);
-    return [];
+    console.error(`[StopAhead Geocoding Exception] Search for "${cleanQ}" failed:`, err);
   }
+
+  // Fallback to Known Landmark dataset if Nominatim fails or returns 0 results
+  return getKnownChennaiLandmarkFallback(cleanQ);
 }
+
 
 /**
  * Search Nominatim with raw query first; if 0 results, retry with broadened query (stripping generic station/bus stop suffixes).
