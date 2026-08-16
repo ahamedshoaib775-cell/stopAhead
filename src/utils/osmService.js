@@ -210,17 +210,120 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000, tr
         };
       });
       stops.sort((a, b) => a.distKm - b.distKm);
-      stops.radiusUsedKm = 10;
+      stops.radiusUsedKm = Math.round(radiusMeters / 1000);
       return stops;
     }
   } catch (err) {
-    console.warn('[StopAhead Overpass] Nominatim fallback notice:', err.message);
+    console.warn('[StopAhead Overpass] Nominatim fallback failed:', err.message);
   }
 
-  const emptyResult = [];
-  emptyResult.radiusUsedKm = 10;
-  return emptyResult;
+  const emptyStops = [];
+  emptyStops.radiusUsedKm = Math.round(radiusMeters / 1000);
+  return emptyStops;
 }
+
+/**
+ * Fast batched real-time check of transit mode availability (bus, train, metro, local_train)
+ * Checks whether stops/stations of each mode exist within radiusMeters of user's coordinates.
+ */
+const availabilityCache = new Map();
+
+export async function fetchMultiModeAvailability(lat, lng, radiusMeters = 3000) {
+  if (!lat || !lng) {
+    return {
+      bus: { available: true, message: '' },
+      train: { available: true, message: '' },
+      metro: { available: true, message: '' },
+      local_train: { available: true, message: '' }
+    };
+  }
+
+  const cacheKey = `${lat.toFixed(2)}_${lng.toFixed(2)}_${radiusMeters}`;
+  if (availabilityCache.has(cacheKey)) {
+    return availabilityCache.get(cacheKey);
+  }
+
+  const result = {
+    bus: { available: true, message: '' },
+    train: { available: true, message: '' },
+    metro: { available: true, message: '' },
+    local_train: { available: true, message: '' }
+  };
+
+  const overpassBatchQuery = `[out:json][timeout:4];
+(
+  node["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});
+  node["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});
+  node["railway"~"station|halt|platform|subway_entrance|subway"](around:${radiusMeters},${lat},${lng});
+  node["station"="subway"](around:${radiusMeters},${lat},${lng});
+);
+out tags 60;`;
+
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter'
+  ];
+
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: `data=${encodeURIComponent(overpassBatchQuery)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      if (data.elements && data.elements.length > 0) {
+        let hasBus = false;
+        let hasTrain = false;
+        let hasMetro = false;
+        let hasLocalTrain = false;
+
+        for (const elem of data.elements) {
+          if (!elem.tags) continue;
+          const tags = elem.tags;
+          const name = (tags.name || '').toLowerCase();
+          const railway = tags.railway || '';
+          const highway = tags.highway || '';
+          const amenity = tags.amenity || '';
+          const station = tags.station || '';
+
+          if (highway === 'bus_stop' || amenity === 'bus_station') {
+            hasBus = true;
+          }
+          if (railway === 'subway_entrance' || railway === 'subway' || station === 'subway' || name.includes('metro')) {
+            hasMetro = true;
+          }
+          if (railway === 'station' || railway === 'halt' || railway === 'platform') {
+            hasTrain = true;
+            hasLocalTrain = true;
+          }
+        }
+
+        result.bus = { available: hasBus, message: hasBus ? '' : 'No bus stop within 3km' };
+        result.train = { available: hasTrain, message: hasTrain ? '' : 'No train station within 3km' };
+        result.metro = { available: hasMetro, message: hasMetro ? '' : 'No Metro station within 3km' };
+        result.local_train = { available: hasLocalTrain, message: hasLocalTrain ? '' : 'No local train station within 3km' };
+
+        availabilityCache.set(cacheKey, result);
+        return result;
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  availabilityCache.set(cacheKey, result);
+  return result;
+}
+
 
 /**
  * Query Overpass API for intermediate stations along a Metro / Local Train line between origin and destination coordinates

@@ -289,7 +289,9 @@ export default function SetDestinationScreen({
       <TransitModeSelector
         selectedMode={transportMode}
         onSelectMode={handleSelectTransportMode}
+        userLocation={userLocation}
       />
+
 
       {/* Route Map Section with Floating Pill Overlay */}
       <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)', position: 'relative', width: '100%', minHeight: '170px' }}>

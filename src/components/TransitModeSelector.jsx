@@ -1,30 +1,31 @@
-// TransitModeSelector.jsx - "How are you traveling?" Selection Component
-import React from 'react';
+// TransitModeSelector.jsx - "How are you traveling?" Selection Component (Horizontal Single-Row Layout)
+import React, { useState, useEffect } from 'react';
 import { Bus, Train, TrainFront, TrainTrack, Check } from 'lucide-react';
+import { fetchMultiModeAvailability } from '../utils/osmService';
 
 export const TRANSIT_MODES = [
   {
     id: 'bus',
     label: 'Bus',
-    description: 'City & Suburban Bus Stops',
+    description: 'City & Suburban',
     icon: Bus
   },
   {
     id: 'train',
     label: 'Train',
-    description: 'Intercity Mainline Railway',
+    description: 'Intercity Rail',
     icon: Train
   },
   {
     id: 'metro',
     label: 'Metro',
-    description: 'Subway & Underground Rail',
+    description: 'Subway & Underground',
     icon: TrainFront
   },
   {
     id: 'local_train',
     label: 'Local Train',
-    description: 'Suburban Commuter Rail',
+    description: 'Suburban Commuter',
     icon: TrainTrack
   }
 ];
@@ -33,77 +34,166 @@ export function getTransitModeInfo(modeId) {
   return TRANSIT_MODES.find((m) => m.id === modeId) || TRANSIT_MODES[0];
 }
 
-export default function TransitModeSelector({ selectedMode = 'bus', onSelectMode }) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '0.6rem'
-      }}
-    >
-      {TRANSIT_MODES.map((mode) => {
-        const IconComp = mode.icon;
-        const isSelected = selectedMode === mode.id;
+export default function TransitModeSelector({ selectedMode = 'bus', onSelectMode, userLocation }) {
+  const [hoveredMode, setHoveredMode] = useState(null);
+  const [modeAvailability, setModeAvailability] = useState({
+    bus: { available: true, message: '' },
+    train: { available: true, message: '' },
+    metro: { available: true, message: '' },
+    local_train: { available: true, message: '' }
+  });
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
 
-        return (
-          <button
-            key={mode.id}
-            type="button"
-            onClick={() => onSelectMode(mode.id)}
-            style={{
-              padding: '0.75rem 0.85rem',
-              borderRadius: 'var(--radius-md)',
-              background: isSelected ? 'rgba(2, 90, 237, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-              border: isSelected ? '1px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.06)',
-              color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '0.5rem',
-              cursor: 'pointer',
-              textAlign: 'left',
-              transition: 'all 0.15s ease',
-              boxShadow: 'none'
-            }}
-            id={`btn-transit-mode-${mode.id}`}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
+  // Check dynamic proximity-based availability per mode in real time
+  useEffect(() => {
+    if (!userLocation?.lat || !userLocation?.lng) return;
+
+    let isMounted = true;
+    setIsCheckingAvailability(true);
+
+    fetchMultiModeAvailability(userLocation.lat, userLocation.lng, 3000)
+      .then((status) => {
+        if (isMounted && status) {
+          setModeAvailability(status);
+        }
+      })
+      .catch((err) => console.warn('Mode availability check error:', err))
+      .finally(() => {
+        if (isMounted) setIsCheckingAvailability(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userLocation?.lat, userLocation?.lng]);
+
+  return (
+    <div style={{ width: '100%', overflowX: 'auto' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '0.5rem',
+          minWidth: '320px'
+        }}
+      >
+        {TRANSIT_MODES.map((mode) => {
+          const IconComp = mode.icon;
+          const isSelected = selectedMode === mode.id;
+          const isHovered = hoveredMode === mode.id;
+          const availInfo = modeAvailability[mode.id] || { available: true, message: '' };
+          const isAvailable = availInfo.available !== false;
+
+          return (
+            <button
+              key={mode.id}
+              type="button"
+              onClick={() => onSelectMode(mode.id)}
+              onMouseEnter={() => setHoveredMode(mode.id)}
+              onMouseLeave={() => setHoveredMode(null)}
+              title={availInfo.message || (isAvailable ? `${mode.label} available nearby` : `No ${mode.label} nearby`)}
+              style={{
+                padding: '0.65rem 0.5rem',
+                borderRadius: 'var(--radius-md)',
+                background: isSelected
+                  ? 'rgba(2, 90, 237, 0.15)'
+                  : isHovered
+                  ? 'rgba(255, 255, 255, 0.06)'
+                  : 'rgba(255, 255, 255, 0.02)',
+                border: isSelected
+                  ? '1px solid var(--accent)'
+                  : isHovered
+                  ? '1px solid rgba(255, 255, 255, 0.18)'
+                  : '1px solid rgba(255, 255, 255, 0.06)',
+                color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.35rem',
+                cursor: 'pointer',
+                textAlign: 'center',
+                transition: 'all 150ms ease',
+                boxShadow: isSelected ? '0 4px 12px rgba(2, 90, 237, 0.2)' : 'none',
+                opacity: isAvailable ? 1 : 0.55,
+                position: 'relative',
+                userSelect: 'none'
+              }}
+              id={`btn-transit-mode-${mode.id}`}
+            >
+              {/* Selected Checkmark Badge */}
+              {isSelected && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '6px',
+                    right: '6px',
+                    width: '15px',
+                    height: '15px',
+                    borderRadius: '50%',
+                    background: 'var(--accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Check size={10} color="#ffffff" strokeWidth={3} />
+                </div>
+              )}
+
+              {/* Mode Icon */}
               <div
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: '30px',
+                  height: '30px',
                   borderRadius: '8px',
                   background: isSelected ? 'var(--accent)' : 'rgba(255, 255, 255, 0.05)',
-                  color: isSelected ? '#ffffff' : 'var(--text-muted)',
+                  color: isSelected ? '#ffffff' : isAvailable ? 'var(--text-secondary)' : 'var(--text-muted)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  flexShrink: 0
+                  transition: 'all 150ms ease'
                 }}
               >
                 <IconComp size={16} />
               </div>
 
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: isSelected ? 700 : 600, fontSize: '0.88rem', color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {/* Label & Dynamic Proximity Status */}
+              <div style={{ width: '100%', minWidth: 0 }}>
+                <div
+                  style={{
+                    fontWeight: isSelected ? 700 : 600,
+                    fontSize: '0.82rem',
+                    color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                >
                   {mode.label}
                 </div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '1px', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {mode.description}
+
+                <div
+                  style={{
+                    fontSize: '0.66rem',
+                    color: !isAvailable ? '#f59e0b' : 'var(--text-muted)',
+                    marginTop: '1px',
+                    lineHeight: 1.1,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    fontWeight: !isAvailable ? 600 : 400
+                  }}
+                >
+                  {!isAvailable ? 'None nearby' : mode.description}
                 </div>
               </div>
-            </div>
-
-            {isSelected && (
-              <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Check size={11} color="#ffffff" strokeWidth={3} />
-              </div>
-            )}
-          </button>
-        );
-      })}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
 
