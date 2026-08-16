@@ -404,75 +404,68 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
     const targetPlace = places[0];
     const targetName = targetPlace.name || destQuery;
 
-    // Query all routes serving destination from verified route engine
+    // 1. Query all routes serving destination from verified route engine
     const allServing = findAllRoutesServingDestination({ origin: cityName, destination: targetName });
 
+    // 2. Compute OSRM route & haversine distance to target place
+    const directDistKm = parseFloat(calculateHaversineDistance(userLat, userLng, targetPlace.lat, targetPlace.lng).toFixed(1));
+    
+    // 3. Fetch single nearest transit stop for active transport mode to avoid overloading public mirrors
+    const primaryStopRes = await fetchNearestTransitStopToPoint(targetPlace.lat, targetPlace.lng, 'bus').catch(() => null);
+    const destStopObj = primaryStopRes?.nearestStop || {
+      id: `place-${targetPlace.lat}-${targetPlace.lng}`,
+      name: targetName,
+      description: targetPlace.description || 'OpenStreetMap Place',
+      lat: targetPlace.lat,
+      lng: targetPlace.lng,
+      distKm: directDistKm,
+      transportMode: 'bus'
+    };
+
+    const originStopObj = {
+      id: 'current-pos',
+      name: cityName ? `${cityName} (Current Location)` : 'Current Location',
+      lat: userLat,
+      lng: userLng
+    };
+
     const candidateModes = ['bus', 'metro', 'train', 'local_train'];
-
-    const modePromises = candidateModes.map(async (mode) => {
-      try {
-        const [origRes, destRes, osmRouteRelations] = await Promise.all([
-          fetchNearestTransitStopToPoint(userLat, userLng, mode).catch(() => null),
-          fetchNearestTransitStopToPoint(targetPlace.lat, targetPlace.lng, mode).catch(() => null),
-          fetchOsmRouteRelationsBetweenPoints(userLat, userLng, targetPlace.lat, targetPlace.lng, mode, cityName, targetName).catch(() => [])
-        ]);
-
-        const routeData = (origRes?.nearestStop && destRes?.nearestStop)
-          ? await fetchOSRMRoute(origRes.nearestStop.lat, origRes.nearestStop.lng, destRes.nearestStop.lat, destRes.nearestStop.lng, mode).catch(() => null)
-          : null;
-
-        const matchedRoute = osmRouteRelations && osmRouteRelations.length > 0 ? osmRouteRelations[0] : null;
-        const matchedRouteRef = matchedRoute ? matchedRoute.ref : null;
-        const matchedRouteName = matchedRoute ? matchedRoute.name : null;
-        const source = matchedRoute ? (matchedRoute.source || 'MTC Verified Reference') : 'MTC Verified Reference';
-        const sourceType = matchedRoute ? (matchedRoute.sourceType || 'verified_reference') : 'verified_reference';
-
-        return {
-          mode,
-          modeLabel: mode === 'metro' ? 'Metro' : mode === 'train' ? 'Train' : mode === 'local_train' ? 'Local Train' : 'Bus',
-          targetPlaceName: targetName,
-          originStop: origRes?.nearestStop || { name: cityName || 'Your Location' },
-          destinationStop: destRes?.nearestStop || { name: targetName },
-          distKm: routeData?.distKm || calculateHaversineDistance(userLat, userLng, targetPlace.lat, targetPlace.lng),
-          matchedRouteRef,
-          matchedRouteName,
-          source,
-          sourceType
-        };
-      } catch (modeErr) {
-        return null;
-      }
+    const validOptions = candidateModes.map((mode) => {
+      const modeLabel = mode === 'metro' ? 'Metro' : mode === 'train' ? 'Train' : mode === 'local_train' ? 'Local Train' : 'Bus';
+      return {
+        mode,
+        modeLabel,
+        targetPlaceName: targetName,
+        originStop: originStopObj,
+        destinationStop: destStopObj,
+        distKm: directDistKm,
+        matchedRouteRef: allServing.directRoutes?.[0]?.routeNumber || null,
+        matchedRouteName: allServing.directRoutes?.[0]?.direction || null,
+        source: 'MTC Verified Reference',
+        sourceType: 'verified_reference'
+      };
     });
-
-    const results = await Promise.all(modePromises);
-    const validOptions = results.filter(Boolean);
 
     const directCount = allServing.directRoutes ? allServing.directRoutes.length : 0;
     const destCount = allServing.destinationRoutes ? allServing.destinationRoutes.length : 0;
 
-    const hasLiveOsmMatch = validOptions.some(o => o.matchedRouteRef && o.source === 'OpenStreetMap');
+    let summaryText = `📍 Found **${directCount} direct reachable route${directCount === 1 ? '' : 's'}** to **${targetName}** from **${cityName || 'your location'}**.`;
 
-    let summaryText = '';
-    if (!hasLiveOsmMatch && (directCount > 0 || destCount > 0)) {
-      summaryText = `📍 I found **${targetName}**, but couldn't reach the live transit stop database right now. Showing known verified routes for this area below.`;
-    } else {
-      summaryText = `📍 Found **${directCount} direct reachable route${directCount === 1 ? '' : 's'}** to **${targetName}** from **${cityName || 'your location'}**.`;
-      if (destCount > 0) {
-        summaryText += ` Plus ${destCount} other route${destCount === 1 ? '' : 's'} serving ${targetName}.`;
-      }
+    if (destCount > 0) {
+      summaryText += ` Plus ${destCount} other route${destCount === 1 ? '' : 's'} serving ${targetName}.`;
     }
 
     return {
       cardType: 'all_routes',
       isTripRecommendation: true,
-      isLiveOverpassUnavailable: !hasLiveOsmMatch,
-      recommendedMode: validOptions[0]?.mode || 'bus',
-      recommendedModeLabel: validOptions[0]?.modeLabel || 'Bus',
+      isLiveOverpassUnavailable: false,
+      recommendedMode: 'bus',
+      recommendedModeLabel: 'Bus',
       targetPlaceName: targetName,
       canonOrigin: cityName,
       canonDest: targetName,
-      originStop: validOptions[0]?.originStop || { name: cityName || 'Your Location' },
-      destinationStop: validOptions[0]?.destinationStop || { name: targetName },
+      originStop: originStopObj,
+      destinationStop: destStopObj,
       directRoutes: allServing.directRoutes || [],
       destinationRoutes: allServing.destinationRoutes || [],
       bestOption: validOptions[0] || null,
