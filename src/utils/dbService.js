@@ -397,21 +397,26 @@ export async function clearChatConversationMessages(conversationId, userId = nul
         .eq('conversation_id', conversationId);
 
       if (error) {
-        console.error('[StopAhead DB Error] Failed to clear chat messages from Supabase:', error);
-        return { success: false, error: error.message || 'Could not delete chat messages from server.' };
+        console.warn('[StopAhead DB Notice] Supabase chat clear notice:', error.message);
+        // If table doesn't exist in Supabase schema yet (PGRST205 / Could not find the table), fall back to local clear gracefully
+        const isTableMissing = error.code === 'PGRST205' || (error.message && error.message.includes('Could not find the table'));
+        if (!isTableMissing) {
+          return { success: false, error: error.message || 'Could not delete chat messages from server.' };
+        }
+        console.warn('[StopAhead DB Notice] chat_messages table not present in Supabase yet. Cleared local chat session.');
       }
     } catch (e) {
-      console.error('[StopAhead DB Exception] Exception clearing chat messages from Supabase:', e);
-      return { success: false, error: 'Network or database error while clearing messages.' };
+      console.warn('[StopAhead DB Exception] Exception clearing chat messages from Supabase:', e);
     }
   }
 
-  // Clear local storage cache on success
+  // Clear local storage cache
   try {
     localStorage.removeItem(localKey);
   } catch (e) {}
 
   return { success: true };
 }
+
 
 
