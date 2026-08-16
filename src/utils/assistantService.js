@@ -2,6 +2,7 @@
 import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints, getKnownChennaiLandmarkFallback } from './osmService';
 import { calculateHaversineDistance } from './geoHelper';
 import { findAllRoutesServingDestination } from '../data/verifiedBusRoutes';
+import { findNearestMetroStation } from '../data/metroDataset.js';
 
 
 
@@ -277,26 +278,20 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
   }
 
   // 8. SPECIFIC MODE AVAILABILITY CHECK ("Is there a metro station near me?", "metro near me")
-  if (query.includes('metro') && (query.includes('near') || query.includes('available') || query.includes('exist') || query.includes('station'))) {
-    console.log('[StopAhead AI Lifecycle] 2. Intent: Mode Availability');
-    const statusMap = await fetchMultiModeAvailability(userLat, userLng, 3000).catch(() => ({}));
-    const metroInfo = statusMap?.metro;
+  if (query.includes('metro') && (query.includes('near') || query.includes('available') || query.includes('exist') || query.includes('station') || query.includes('line'))) {
+    console.log('[StopAhead AI Lifecycle] 2. Intent: Metro Station Resolution');
+    const nearestStation = findNearestMetroStation(userLat, userLng);
 
-    if (metroInfo && !metroInfo.available) {
-      const cityMetroStops = await searchNominatimPlaces(`Metro Station near ${cityName || 'city'}`).catch(() => []);
-      const nearestMetroName = cityMetroStops.length > 0 ? cityMetroStops[0].name : 'Koyambedu Metro';
-      const nearestKm = cityMetroStops.length > 0
-        ? calculateHaversineDistance(userLat, userLng, cityMetroStops[0].lat, cityMetroStops[0].lng).toFixed(1)
-        : '8.4';
-
-      return {
-        cardType: 'unavailable_mode',
-        mode: 'metro',
-        nearestStationName: nearestMetroName,
-        nearestStationKm: nearestKm,
-        responseText: `You're not near a Metro station ${cityName ? `in **${cityName}**` : ''} — nearest one is **${nearestMetroName}**, ${nearestKm} km away.`
-      };
-    }
+    return {
+      cardType: 'trip_recommendation',
+      recommendedMode: 'metro',
+      recommendedModeLabel: 'CMRL Metro',
+      targetPlaceName: nearestStation.name,
+      distKm: nearestStation.distKm,
+      originStop: { name: cityName ? `${cityName} (Your Location)` : 'Your Location', lat: userLat, lng: userLng },
+      destinationStop: { name: nearestStation.name, lat: nearestStation.lat, lng: nearestStation.lng, description: nearestStation.line },
+      responseText: `🚇 The nearest CMRL Metro station to your location is **${nearestStation.name}** (**${nearestStation.line}**), located **${nearestStation.distKm} km** away.`
+    };
   }
 
   // 9. MULTI-MODAL TRIP PLANNING / DESTINATION SEARCH INTENT (e.g. "I want to go to Saidapet", "I am in Poonamallee and I want to go to Saidapet")
