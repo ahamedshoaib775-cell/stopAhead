@@ -1,7 +1,11 @@
+// osmService.js - OpenStreetMap (Nominatim + Leaflet + Overpass + OSRM) integration service
+import { calculateHaversineDistance } from './geoHelper';
+
 /**
  * Safe fetch wrapper with hard AbortController timeout to guarantee no API call hangs indefinitely
  */
 export async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
