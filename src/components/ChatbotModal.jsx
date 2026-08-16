@@ -1,22 +1,69 @@
-// ChatbotModal.jsx - Light-Theme Conversational AI Trip-Planner Assistant Drawer
+// ChatbotModal.jsx - Complete Production-Ready StopAhead AI Chatbot Modal (Light Theme)
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Bot, Radio, Bus, Train, TrainFront, TrainTrack, Rocket, Navigation, ArrowRight } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, Radio, Compass, Bell, Navigation, Sparkles, RefreshCw } from 'lucide-react';
 import { processAssistantQuery } from '../utils/assistantService';
+import { fetchChatConversations, createChatConversation, fetchChatMessages, saveChatMessage } from '../utils/dbService';
 
-export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStartTrip, onNavigate }) {
+import BestWayThereCard from './chatbot/BestWayThereCard';
+import AlertCard from './chatbot/AlertCard';
+import UnavailableModeCard from './chatbot/UnavailableModeCard';
+import StopCard from './chatbot/StopCard';
+import JourneyCard from './chatbot/JourneyCard';
+
+export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStartTrip, onNavigate, user }) {
+  const userId = user?.id || null;
+
+  const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([
     {
-      id: 'init-1',
+      id: 'welcome-1',
       sender: 'bot',
-      text: "👋 Hi! I'm StopAhead AI Trip Planner. Ask me 'How do I get to Phoenix Mall?' or 'How far is Anna Nagar?' to get live data-backed transit recommendations!"
+      text: `👋 Hi! I'm StopAhead AI.\n\nI can help you:\n• Find the fastest way to any destination\n• Check nearby bus, metro, train & local train stops\n• Set and manage stop alerts\n• Track your current journey\n\nWhere are you headed today?`
     }
   ]);
 
   const [inputQuery, setInputQuery] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [cancelConfirmMsgId, setCancelConfirmMsgId] = useState(null);
   const messagesEndRef = useRef(null);
 
-  const { userPosition, userLocation, activeTrip, transportMode = 'bus' } = appContext;
+  const { userPosition, userLocation, activeTrip, transportMode = 'bus', onUpdateActiveTrip } = appContext;
+
+  // Load persistent conversation & messages from Supabase DB / local storage
+  useEffect(() => {
+    let isMounted = true;
+
+    async function initConversation() {
+      try {
+        const convs = await fetchChatConversations(userId);
+        let currentConv = convs && convs.length > 0 ? convs[0] : null;
+
+        if (!currentConv) {
+          currentConv = await createChatConversation(userId, 'StopAhead Travel Chat');
+        }
+
+        if (currentConv && isMounted) {
+          setConversationId(currentConv.id);
+          const savedMsgs = await fetchChatMessages(currentConv.id);
+          if (savedMsgs && savedMsgs.length > 0) {
+            const formatted = savedMsgs.map((m) => ({
+              id: m.id,
+              sender: m.role === 'user' ? 'user' : 'bot',
+              text: m.content,
+              data: m.metadata?.cardData || m.metadata || null
+            }));
+            setMessages(formatted);
+          }
+        }
+      } catch (e) {
+        console.warn('Init conversation error:', e);
+      }
+    }
+
+    if (isOpen) {
+      initConversation();
+    }
+  }, [isOpen, userId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -29,19 +76,6 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
   }, [messages, isOpen]);
 
   if (!isOpen) return null;
-
-  const getModeIcon = (mode) => {
-    switch (mode) {
-      case 'metro':
-        return TrainFront;
-      case 'train':
-      case 'local_train':
-        return TrainTrack;
-      case 'bus':
-      default:
-        return Bus;
-    }
-  };
 
   const handleSend = async (queryText = inputQuery) => {
     const cleanText = (queryText || '').trim();
@@ -57,6 +91,11 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
     setInputQuery('');
     setIsProcessing(true);
 
+    // Save User Message to Supabase DB
+    if (conversationId) {
+      saveChatMessage(conversationId, 'user', cleanText);
+    }
+
     try {
       const res = await processAssistantQuery(cleanText, appContext);
       let botMsg = {};
@@ -66,8 +105,20 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
           id: `bot-${Date.now()}`,
           sender: 'bot',
           text: res.responseText || res.text || '',
-          data: res.isTripRecommendation ? res : null
+          data: res
         };
+
+        // Handle direct trip alert creation from chat
+        if (res.cardType === 'alert_created' && onStartTrip && res.destinationStop) {
+          onStartTrip(
+            null,
+            res.destinationStop,
+            'stops',
+            res.thresholdValue || 2,
+            'chime',
+            res.mode || 'bus'
+          );
+        }
       } else {
         botMsg = {
           id: `bot-${Date.now()}`,
@@ -77,27 +128,29 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
       }
 
       setMessages((prev) => [...prev, botMsg]);
+
+      // Save Assistant Message & Card Metadata to Supabase DB
+      if (conversationId) {
+        saveChatMessage(conversationId, 'assistant', botMsg.text, { cardData: botMsg.data });
+      }
     } catch (e) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `bot-err-${Date.now()}`,
-          sender: 'bot',
-          text: "Sorry, I had trouble planning that route with live transit data. Please try again!"
-        }
-      ]);
+      const errMsg = {
+        id: `bot-err-${Date.now()}`,
+        sender: 'bot',
+        text: "Sorry, I ran into an error while calculating routes. Please try again!",
+        isError: true
+      };
+      setMessages((prev) => [...prev, errMsg]);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const quickPrompts = [
-    { label: '🗺️ Route to Phoenix Mall', query: 'How do I get to Phoenix Mall?' },
-    { label: '📍 Nearest transit stop', query: 'Where is the nearest stop?' },
-    { label: "⏱️ What's my ETA?", query: "What's my ETA?" },
-    { label: '🔔 Alarm trigger time', query: 'When will my alarm trigger?' },
-    { label: '🗣️ Tamil / English Voice Alerts', query: 'How do voice alerts work?' },
-    { label: '🚨 Emergency SOS', query: 'How does Emergency SOS work?' }
+  const quickActionButtons = [
+    { label: '✨ Best way there', query: 'Best way there' },
+    { label: '📍 Where am I?', query: 'Where am I?' },
+    { label: '🔔 Set an alert', query: 'Set an alert for Marina Beach, 2 stops before' },
+    { label: '⏱️ My active alert', query: 'My active alert' }
   ];
 
   return (
@@ -111,8 +164,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
-        padding: '0',
-        animation: 'fadeIn 0.25s ease-out'
+        padding: 0
       }}
     >
       <div
@@ -135,7 +187,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
         <div
           style={{
             padding: '1rem 1.25rem',
-            background: '#f8fafc',
+            background: '#ffffff',
             borderBottom: '1px solid #e2e8f0',
             display: 'flex',
             alignItems: 'center',
@@ -145,8 +197,8 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <div
               style={{
-                width: '36px',
-                height: '36px',
+                width: '38px',
+                height: '38px',
                 borderRadius: '12px',
                 background: '#025AED',
                 display: 'flex',
@@ -156,16 +208,15 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
                 boxShadow: '0 4px 14px rgba(2, 90, 237, 0.35)'
               }}
             >
-              <Bot size={20} />
+              <Bot size={22} />
             </div>
 
             <div>
-              <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0f172a' }}>
-                StopAhead AI Assistant
+              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a' }}>
+                StopAhead AI
               </div>
-              <div style={{ fontSize: '0.72rem', color: '#025AED', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                <Radio size={10} color="#025AED" />
-                <span>Live GPS Active ({userLocation?.cityName || 'Detected City'})</span>
+              <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                Your Travel Assistant • {userLocation?.cityName || 'Live GPS Active'}
               </div>
             </div>
           </div>
@@ -177,7 +228,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
               width: '32px',
               height: '32px',
               borderRadius: '50%',
-              background: '#e2e8f0',
+              background: '#f1f5f9',
               border: 'none',
               color: '#475569',
               display: 'flex',
@@ -188,40 +239,6 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
           >
             <X size={18} />
           </button>
-        </div>
-
-        {/* Quick Suggestion Chips */}
-        <div
-          style={{
-            padding: '0.65rem 1rem',
-            background: '#ffffff',
-            borderBottom: '1px solid #f1f5f9',
-            display: 'flex',
-            gap: '0.45rem',
-            overflowX: 'auto',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          {quickPrompts.map((chip, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleSend(chip.query)}
-              style={{
-                padding: '0.4rem 0.75rem',
-                borderRadius: '999px',
-                background: '#f1f5f9',
-                border: '1px solid #cbd5e1',
-                color: '#1e293b',
-                fontSize: '0.76rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                flexShrink: 0
-              }}
-            >
-              {chip.label}
-            </button>
-          ))}
         </div>
 
         {/* Messages List Area */}
@@ -238,8 +255,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
         >
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
-            const tripData = msg.data;
-            const ModeIcon = tripData ? getModeIcon(tripData.recommendedMode) : Bus;
+            const cardData = msg.data;
 
             return (
               <div
@@ -273,95 +289,84 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
 
                 <div
                   style={{
-                    maxWidth: '84%',
-                    padding: '0.8rem 1rem',
+                    maxWidth: '85%',
+                    padding: '0.85rem 1.05rem',
                     borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
                     background: isUser ? '#025AED' : '#ffffff',
                     color: isUser ? '#ffffff' : '#0f172a',
                     border: isUser ? 'none' : '1px solid #e2e8f0',
                     fontSize: '0.88rem',
                     lineHeight: 1.5,
-                    boxShadow: isUser ? '0 4px 14px rgba(2, 90, 237, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.05)'
+                    boxShadow: isUser ? '0 4px 14px rgba(2, 90, 237, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.04)',
+                    whiteSpace: 'pre-line'
                   }}
                 >
-                  {/* Inline Mode Icon for Trip Recommendations */}
-                  {tripData && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                        fontWeight: 800,
-                        fontSize: '0.9rem',
-                        color: '#025AED',
-                        marginBottom: '0.4rem'
-                      }}
-                    >
-                      <ModeIcon size={18} color="#025AED" />
-                      <span>Recommended: {tripData.recommendedModeLabel}</span>
-                    </div>
-                  )}
-
                   <div>{msg.text}</div>
 
-                  {/* One-Tap Start Trip Card */}
-                  {tripData && onStartTrip && (
-                    <div
-                      style={{
-                        marginTop: '0.75rem',
-                        padding: '0.75rem',
-                        borderRadius: '12px',
-                        background: '#f1f5f9',
-                        border: '1px solid #cbd5e1'
-                      }}
-                    >
-                      <div style={{ fontSize: '0.76rem', color: '#475569', fontWeight: 700, marginBottom: '0.35rem' }}>
-                        JOURNEY BREAKDOWN
-                      </div>
-                      <div style={{ fontSize: '0.82rem', color: '#0f172a', fontWeight: 600 }}>
-                        📍 {tripData.originStop?.name} → {tripData.destinationStop?.name}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                        {tripData.stopsCount} stops • ~{tripData.transitMins} min transit • {tripData.walkMins} min walk
-                      </div>
+                  {/* Render Structured Cards based on metadata */}
+                  {cardData && (
+                    <>
+                      {/* Best Way There Card */}
+                      {(cardData.cardType === 'best_way_there' || cardData.isTripRecommendation) && (
+                        <BestWayThereCard
+                          data={cardData}
+                          onStartTrip={onStartTrip}
+                          onNavigate={onNavigate}
+                          onClose={onClose}
+                        />
+                      )}
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onStartTrip(
-                            tripData.originStop,
-                            tripData.destinationStop,
-                            'stops',
-                            2,
-                            null,
-                            tripData.recommendedMode
-                          );
-                          onNavigate && onNavigate('active-trip');
-                          onClose && onClose();
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '0.65rem',
-                          marginTop: '0.6rem',
-                          borderRadius: '10px',
-                          background: '#025AED',
-                          color: '#ffffff',
-                          fontWeight: 800,
-                          fontSize: '0.82rem',
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.4rem',
-                          boxShadow: '0 4px 12px rgba(2, 90, 237, 0.35)'
-                        }}
-                        id="btn-start-trip-from-chat"
-                      >
-                        <Rocket size={15} />
-                        <span>Start this trip now</span>
-                      </button>
-                    </div>
+                      {/* Alert Status Card */}
+                      {cardData.cardType === 'alert' && (
+                        <AlertCard
+                          activeTrip={cardData.activeTrip || activeTrip}
+                          onModifyAlert={(newVal) => handleSend(`Change my alert to ${newVal} stops`)}
+                          onCancelAlert={() => handleSend('Cancel my alert')}
+                        />
+                      )}
+
+                      {/* Unavailable Mode Card */}
+                      {cardData.cardType === 'unavailable_mode' && (
+                        <UnavailableModeCard
+                          mode={cardData.mode}
+                          nearestStationName={cardData.nearestStationName}
+                          nearestStationKm={cardData.nearestStationKm}
+                          onSwitchToAvailableMode={(newMode) => handleSend(`Switch to ${newMode}`)}
+                        />
+                      )}
+
+                      {/* Stop Result Card */}
+                      {cardData.cardType === 'stop' && cardData.stop && (
+                        <StopCard
+                          stop={cardData.stop}
+                          mode={cardData.mode || 'bus'}
+                          onSelectStop={(stop) => handleSend(`Alert me 2 stops before ${stop.name}`)}
+                        />
+                      )}
+
+                      {/* Cancel Confirmation Dialog */}
+                      {cardData.cardType === 'cancel_confirm' && (
+                        <div style={{ marginTop: '0.65rem', padding: '0.65rem', borderRadius: '12px', background: '#fff1f2', border: '1px solid #fecdd3', display: 'flex', gap: '0.5rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onStartTrip) onStartTrip(null, null, 'stops', 2, 'chime', 'bus');
+                              handleSend('Alert cancelled');
+                            }}
+                            style={{ flex: 1, padding: '0.45rem', borderRadius: '8px', background: '#e11d48', color: '#ffffff', border: 'none', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}
+                          >
+                            Confirm Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSend('Keep my alert')}
+                            style={{ flex: 1, padding: '0.45rem', borderRadius: '8px', background: '#ffffff', color: '#334155', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
+                          >
+                            Keep Alert
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -370,27 +375,48 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
 
           {isProcessing && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-              <div
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: 'rgba(2, 90, 237, 0.1)',
-                  border: '1px solid #025AED',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#025AED'
-                }}
-              >
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(2, 90, 237, 0.1)', border: '1px solid #025AED', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#025AED' }}>
                 <Bot size={14} />
               </div>
               <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic' }}>
-                Analyzing transit options & calculating route...
+                StopAhead AI is thinking & calculating transit data...
               </div>
             </div>
           )}
           <div ref={messagesEndRef} />
+        </div>
+
+        {/* Welcome Quick Action Chips (rendered above input) */}
+        <div
+          style={{
+            padding: '0.6rem 1rem',
+            background: '#ffffff',
+            borderTop: '1px solid #f1f5f9',
+            display: 'flex',
+            gap: '0.45rem',
+            overflowX: 'auto'
+          }}
+        >
+          {quickActionButtons.map((btn, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleSend(btn.query)}
+              style={{
+                padding: '0.4rem 0.75rem',
+                borderRadius: '999px',
+                background: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                color: '#1e293b',
+                fontSize: '0.76rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                flexShrink: 0
+              }}
+            >
+              {btn.label}
+            </button>
+          ))}
         </div>
 
         {/* Input Bar */}
@@ -412,8 +438,9 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
             type="text"
             value={inputQuery}
             onChange={(e) => setInputQuery(e.target.value)}
-            placeholder="Ask 'How do I get to Phoenix Mall?'..."
+            placeholder="Ask StopAhead AI..."
             disabled={isProcessing}
+            maxLength={300}
             style={{
               flex: 1,
               padding: '0.75rem 1rem',

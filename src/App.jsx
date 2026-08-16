@@ -802,6 +802,7 @@ export default function App() {
         onClose={() => setIsChatbotOpen(false)}
         onStartTrip={startTrip}
         onNavigate={setActiveTab}
+        user={user}
         appContext={{
           userPosition,
           userLocation,
@@ -809,6 +810,7 @@ export default function App() {
           transportMode: activeTrip?.transportMode || 'bus'
         }}
       />
+
 
 
       {/* Floating AI Assistant FAB (visible when chatbot modal is closed) */}

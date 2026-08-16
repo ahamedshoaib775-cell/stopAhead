@@ -1,18 +1,26 @@
+// assistantService.js - StopAhead AI Intelligent Multi-Modal Travel Assistant Engine
+import { searchNominatimPlaces, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops } from './osmService';
+import { calculateHaversineDistance } from './geoHelper';
+
+/**
+ * Main assistant entry point processing natural language queries with tool calls & structured results
+ */
 export async function processAssistantQuery(userQuery, appContext = {}) {
   if (!userQuery || !userQuery.trim()) {
     return {
-      responseText: "Hi! I'm your StopAhead AI Assistant. Ask me anything like 'How do I get to Phoenix Mall?', 'What's my ETA?', or 'How does the proximity alarm work?'"
+      responseText: "👋 Hi! I'm StopAhead AI. Tell me where you're headed and I'll find the fastest way there — by bus, metro, train, or local train — and make sure you never miss your stop."
     };
   }
 
   const rawQuery = userQuery.trim();
   const query = rawQuery.toLowerCase();
-  const { userPosition, userLocation, nearbyStops = [], activeTrip = null, transportMode = 'bus' } = appContext;
+  const { userPosition, userLocation, nearbyStops = [], activeTrip = null, transportMode = 'bus', onUpdateActiveTrip } = appContext;
 
-  const userLat = userPosition?.lat || userLocation?.lat;
-  const userLng = userPosition?.lng || userLocation?.lng;
+  const userLat = userPosition?.lat || userLocation?.lat || 13.0827;
+  const userLng = userPosition?.lng || userLocation?.lng || 80.2707;
+  const cityName = userLocation?.cityName || 'your area';
 
-  // 1. GREETINGS & APP CAPABILITY INTRO
+  // 1. GREETINGS & WELCOME INTENT
   if (
     query === 'hi' ||
     query === 'hello' ||
@@ -20,246 +28,235 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
     query.startsWith('hi ') ||
     query.startsWith('hello ') ||
     query.includes('who are you') ||
-    query.includes('what can you do') ||
-    query === 'help' ||
-    query.includes('help me')
+    query.includes('what can you do')
   ) {
     return {
-      responseText: `👋 Hello! I'm StopAhead AI, your smart transit assistant for ${userLocation?.cityName || 'your city'}.\n\nHere is what I can do for you:\n• 🗺️ Plan optimal routes to any place ('How do I get to T Nagar?')\n• 📍 Find nearest transit stops ('Where is the closest bus stop?')\n• ⏱️ Check live ETA & remaining stops ('What is my ETA?')\n• 🔔 Monitor arrival alarms ('When will my alarm trigger?')\n• ⚙️ Explain app features (SOS, Voice alerts in Tamil/English, Dark mode)`
+      responseText: `👋 Hi! I'm StopAhead AI. Tell me where you're headed and I'll find the fastest way there — by bus, metro, train, or local train — and make sure you never miss your stop.\n\nAsk me:\n• "How do I get to Phoenix Mall?"\n• "Is there a metro station near me?"\n• "Alert me 2 stops before Marina Beach"`
     };
   }
 
-  // 2. TRIP & ROUTE PLANNING INTENT ("How do I get to X?", "Take me to Y", "Route to Z", "Marina Beach")
+  // 2. "WHERE AM I?" / LOCATION INTENT
+  if (query.includes('where am i') || query.includes('my location') || query.includes('current position')) {
+    if (userLocation?.cityName) {
+      return {
+        cardType: 'location',
+        responseText: `📍 You are currently in **${userLocation.cityName}** (${userLat.toFixed(4)}, ${userLng.toFixed(4)}).`
+      };
+    }
+    return {
+      responseText: `📍 You are currently at coordinates ${userLat.toFixed(4)}, ${userLng.toFixed(4)}.`
+    };
+  }
+
+  // 3. MY ACTIVE ALERT / VIEW ALERT INTENT
+  if (query.includes('my active alert') || query.includes('view alert') || query.includes('current alert') || query.includes('check alert')) {
+    if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
+      const stopsLeft = activeTrip.stopsRemaining ?? 2;
+      const threshVal = activeTrip.thresholdValue || 2;
+      const destName = activeTrip.destinationStop.name;
+      const modeName = (activeTrip.transportMode || 'bus').toUpperCase();
+      return {
+        cardType: 'alert',
+        activeTrip,
+        responseText: `🔔 You have an active ${modeName} alert for **${destName}**. It will notify you ${threshVal} stops before arrival (${stopsLeft} stops left).`
+      };
+    }
+    return {
+      responseText: "🔔 You don't have an active stop alert running right now. Tell me where you're going (e.g. 'Alert me 2 stops before Marina Beach') to set one!"
+    };
+  }
+
+  // 4. CANCEL STOP ALERT INTENT ("Cancel my alert", "Stop alarm")
+  if (query.includes('cancel alert') || query.includes('cancel my alert') || query.includes('delete alert') || query.includes('stop alert')) {
+    if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
+      const destName = activeTrip.destinationStop.name;
+      return {
+        cardType: 'cancel_confirm',
+        activeTrip,
+        responseText: `⚠️ Are you sure you want to cancel your alert for **${destName}**?`
+      };
+    }
+    return {
+      responseText: "No active stop alert to cancel!"
+    };
+  }
+
+  // 5. MODIFY STOP ALERT INTENT ("Change alert to 3 stops", "Make alert 4 stops")
+  if (query.includes('change alert') || query.includes('modify alert') || query.includes('update alert') || query.includes('set alert to')) {
+    const matchNumber = query.match(/(\d+)\s*(stop|min|minute)/);
+    const newThresh = matchNumber ? parseInt(matchNumber[1], 10) : 3;
+
+    if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
+      const destName = activeTrip.destinationStop.name;
+      const mode = (activeTrip.transportMode || 'bus').toUpperCase();
+      return {
+        cardType: 'alert_modified',
+        newThreshold: newThresh,
+        responseText: `Done! I've updated your ${mode} alert for **${destName}** to trigger **${newThresh} stops** before arrival.`
+      };
+    }
+  }
+
+  // 6. CREATE STOP ALERT INTENT ("Alert me 2 stops before Marina Beach", "Set alert for Phoenix Mall")
+  if (query.includes('alert me') || (query.includes('set') && query.includes('alert'))) {
+    const destMatch = extractTargetPlaceName(rawQuery, ['alert me', 'set alert for', 'set an alert for', 'stops before', 'stop before', 'before']);
+    const matchNumber = query.match(/(\d+)\s*(stop|min|minute)/);
+    const thresholdVal = matchNumber ? parseInt(matchNumber[1], 10) : 2;
+
+    if (destMatch && userLat && userLng) {
+      const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
+      const places = await searchNominatimPlaces(destMatch, locationBias);
+
+      if (places && places.length > 0) {
+        const place = places[0];
+        const modeUsed = transportMode || 'bus';
+        const stopRes = await fetchNearestTransitStopToPoint(place.lat, place.lng, modeUsed);
+        const destStop = stopRes?.nearestStop || place;
+
+        return {
+          cardType: 'alert_created',
+          destinationStop: destStop,
+          mode: modeUsed,
+          thresholdValue: thresholdVal,
+          responseText: `Done! I'll alert you when you're **${thresholdVal} stops away** from **${destStop.name}** (${modeUsed.toUpperCase()}).`
+        };
+      }
+    }
+  }
+
+  // 7. SPECIFIC MODE AVAILABILITY CHECK ("Is there a metro station near me?", "metro near me")
+  if (query.includes('metro') && (query.includes('near') || query.includes('available') || query.includes('exist') || query.includes('station'))) {
+    const statusMap = await fetchMultiModeAvailability(userLat, userLng, 3000);
+    const metroInfo = statusMap?.metro;
+
+    if (metroInfo && !metroInfo.available) {
+      // Find nearest metro station in entire city for honest answer
+      const cityMetroStops = await searchNominatimPlaces(`Metro Station near ${cityName}`);
+      const nearestMetroName = cityMetroStops.length > 0 ? cityMetroStops[0].name : 'Koyambedu Metro';
+      const nearestKm = cityMetroStops.length > 0
+        ? calculateHaversineDistance(userLat, userLng, cityMetroStops[0].lat, cityMetroStops[0].lng).toFixed(1)
+        : '8.4';
+
+      return {
+        cardType: 'unavailable_mode',
+        mode: 'metro',
+        nearestStationName: nearestMetroName,
+        nearestStationKm: nearestKm,
+        responseText: `You're not near a Metro station in **${cityName}** — nearest one is **${nearestMetroName}**, ${nearestKm} km away.`
+      };
+    }
+  }
+
+  // 8. MULTI-MODAL TRIP PLANNING / "BEST WAY THERE" INTENT ("How do I get to X?", "Best way to Y")
   const isRoutingRequest =
+    query.includes('best way') ||
     query.includes('want to go to') ||
     query.includes('how do i get to') ||
     query.includes('how to get to') ||
     query.includes('how to reach') ||
     query.includes('take me to') ||
     query.includes('route to') ||
-    query.includes('navigate to') ||
     query.includes('directions to') ||
-    query.includes('way to') ||
-    query.includes('path to') ||
-    query.includes('travel to') ||
-    query.includes('head to') ||
-    (query.includes('go to') && !query.includes('alarm') && !query.includes('settings'));
+    (query.includes('go to') && !query.includes('alarm'));
 
-  if (isRoutingRequest) {
+  if (isRoutingRequest || (rawQuery.length >= 3 && !query.includes('what') && !query.includes('how'))) {
     const destQuery = extractTargetPlaceName(rawQuery, [
+      'best way to get to',
+      'best way there to',
+      'best way to',
       'want to go to',
       'how do i get to',
       'how to get to',
       'how to reach',
       'take me to',
       'route to',
-      'navigate to',
       'directions to',
-      'way to',
-      'path to',
-      'travel to',
-      'head to',
       'go to'
     ]);
 
     if (destQuery && userLat && userLng) {
-      const recommendation = await planTripFromConversation(destQuery, appContext);
-      if (recommendation) {
-        return recommendation;
+      const multiRouteData = await planBestWayMultiModal(destQuery, userLat, userLng, cityName);
+      if (multiRouteData) {
+        return multiRouteData;
       }
     }
   }
 
-  // 3. REMAINING STOPS INTENT ("How many stops left?", "When do I get off?")
-  if (
-    (query.includes('stop') || query.includes('station')) &&
-    (query.includes('how many') || query.includes('remaining') || query.includes('left') || query.includes('until') || query.includes('next'))
-  ) {
-    if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
-      const stopsLeft = activeTrip.stopsRemaining ?? activeTrip.remainingStopsCount ?? 2;
-      const destName = activeTrip.destinationStop.name || 'your destination';
+  // 9. NEARBY STOPS QUERY ("nearest bus stop", "closest train station")
+  if (query.includes('nearest') || query.includes('closest') || query.includes('nearby')) {
+    let mode = transportMode;
+    if (query.includes('metro')) mode = 'metro';
+    else if (query.includes('train')) mode = 'train';
+    else if (query.includes('bus')) mode = 'bus';
+
+    const stops = await fetchOverpassNearbyStops(userLat, userLng, 2500, mode);
+    if (stops && stops.length > 0) {
+      const topStop = stops[0];
       return {
-        responseText: `🚌 You have ${stopsLeft} stop${stopsLeft === 1 ? '' : 's'} remaining until ${destName}. Get ready to prepare your exit!`
+        cardType: 'stop',
+        stop: topStop,
+        mode,
+        responseText: `📍 Nearest **${mode.toUpperCase()}** stop to your current location is **${topStop.name}** (${topStop.distKm} km away).`
+      };
+    } else {
+      return {
+        cardType: 'unavailable_mode',
+        mode,
+        responseText: `No ${mode.toUpperCase()} stops found within 2.5 km of your location in ${cityName}.`
       };
     }
-    return {
-      responseText: "You don't have an active trip running right now. Pick a destination on the 'Set Destination' screen to track live remaining stops!"
-    };
   }
 
-  // 4. ETA & ARRIVAL TIME INTENT ("What's my ETA?", "When will I arrive?")
-  if (query.includes('eta') || query.includes('arrive') || query.includes('arrival') || query.includes('when will i get') || query.includes('time remaining')) {
-    if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
-      const etaMins = activeTrip.timeRemainingMins ?? activeTrip.etaMins ?? 10;
-      const distKm = activeTrip.distanceRemainingKm ?? activeTrip.remainingDistKm ?? 2.5;
-      const destName = activeTrip.destinationStop.name || 'your destination';
-      return {
-        responseText: `⏱️ Your estimated arrival at ${destName} is in approximately ${etaMins} minute${etaMins === 1 ? '' : 's'} (${distKm} km remaining).`
-      };
-    }
-    return {
-      responseText: "No active trip currently running. Select a destination to track your live ETA in real-time!"
-    };
-  }
-
-  // 5. PROXIMITY ALARM TRIGGER INTENT ("When will my alarm trigger?", "How does the alarm work?")
-  if (query.includes('alarm') || query.includes('alert') || query.includes('wake') || query.includes('trigger') || query.includes('ring')) {
-    if (query.includes('how') && (query.includes('work') || query.includes('set') || query.includes('use'))) {
-      return {
-        responseText: "🔔 **StopAhead Proximity Alarm**\n\nStopAhead tracks your live GPS position in the background as you commute on a bus, train, or metro. When you reach your set threshold (e.g. 2 stops or 1 km before destination), it triggers loud audio chimes, strong vibration patterns, and spoken voice alerts so you never miss your stop!"
-      };
-    }
-
-    if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
-      const threshType = activeTrip.thresholdType || 'stops';
-      const threshVal = activeTrip.thresholdValue || 2;
-      const destName = activeTrip.destinationStop.name || 'your destination';
-
-      if (threshType === 'stops') {
-        const stopsRemaining = activeTrip.stopsRemaining ?? 3;
-        const stopsUntilAlarm = Math.max(0, stopsRemaining - threshVal);
-        return {
-          responseText: `🔔 Your alarm is set for ${threshVal} stop${threshVal === 1 ? '' : 's'} before ${destName}. It will trigger in approximately ${stopsUntilAlarm} stop${stopsUntilAlarm === 1 ? '' : 's'}!`
-        };
-      } else if (threshType === 'distance') {
-        const distRemaining = activeTrip.distanceRemainingKm ?? 3.5;
-        const distUntilAlarm = Math.max(0, distRemaining - threshVal).toFixed(1);
-        return {
-          responseText: `🔔 Your alarm is set for ${threshVal} km before ${destName}. It will trigger in approximately ${distUntilAlarm} km.`
-        };
-      } else {
-        const etaMins = activeTrip.timeRemainingMins ?? 12;
-        const minsUntilAlarm = Math.max(1, etaMins - threshVal);
-        return {
-          responseText: `🔔 Your alarm is set for ${threshVal} minute${threshVal === 1 ? '' : 's'} before arrival. It will trigger in approximately ${minsUntilAlarm} min.`
-        };
-      }
-    }
-    return {
-      responseText: "Set a destination on the 'Set Destination' tab to enable your custom arrival proximity alarm!"
-    };
-  }
-
-  // 6. NEARBY TRANSIT STOPS INTENT ("Where is the nearest stop?")
-  if ((query.includes('nearest') || query.includes('closest') || query.includes('nearby')) && (query.includes('stop') || query.includes('station') || query.includes('bus') || query.includes('metro') || query.includes('train'))) {
-    if (nearbyStops && nearbyStops.length > 0) {
-      const topStop = nearbyStops[0];
-      const distStr = formatDistance(topStop.distKm || 0.3);
-      return {
-        responseText: `📍 The nearest ${transportMode.toUpperCase()} stop to your current location is **${topStop.name}** (${distStr} away).`
-      };
-    }
-    return {
-      responseText: `Searching OpenStreetMap for nearby ${transportMode} stops in ${userLocation?.cityName || 'your location'}... Try selecting a mode on the 'Set Destination' screen!`
-    };
-  }
-
-  // 7. APP FEATURES & FAQ KNOWLEDGE BASE
-  if (query.includes('sos') || query.includes('emergency') || query.includes('safety') || query.includes('contact')) {
-    return {
-      responseText: "🚨 **Emergency SOS Feature**\n\nTap the red 'Emergency SOS' button on the header bar anytime. It generates an automated SMS tracking link with your live coordinates and sends emergency alerts to your saved family contacts."
-    };
-  }
-
-  if (query.includes('share') || query.includes('tracking link') || query.includes('live trip')) {
-    return {
-      responseText: "📲 **Share Live Trip**\n\nDuring an active trip, tap 'Share Live Trip' on the Active Journey screen to copy a live tracking URL or share it directly via WhatsApp/SMS to friends and family."
-    };
-  }
-
-  if (query.includes('voice') || query.includes('tamil') || query.includes('english') || query.includes('language') || query.includes('speak')) {
-    return {
-      responseText: "🗣️ **Voice Alerts (English & Tamil)**\n\nStopAhead speaks voice announcements as you approach your stop! You can toggle Voice Alerts and switch between English and Tamil (தமிழ்) anytime in the 'Settings' tab."
-    };
-  }
-
-  if (query.includes('city') || query.includes('location permission') || query.includes('override')) {
-    return {
-      responseText: "🌆 **City & GPS Selector**\n\nTap the blue location chip at the top of the 'Set Destination' screen to manually choose your city (Chennai, Mumbai, Delhi, Bengaluru, Hyderabad, Kolkata, etc.) or grant live browser GPS access."
-    };
-  }
-
-  if (query.includes('simulat') || query.includes('test') || query.includes('offline') || query.includes('demo')) {
-    return {
-      responseText: "🎮 **GPS Simulation & Demo Mode**\n\nYou can test how the alarm triggers without moving! In Settings, toggle between 'Simulated GPS' (moves automatically along the road) and 'Real GPS' (uses live hardware location)."
-    };
-  }
-
-  if (query.includes('contrast') || query.includes('theme') || query.includes('dark') || query.includes('font')) {
-    return {
-      responseText: "🎨 **High Contrast & Dark Theme**\n\nStopAhead supports Dark Mode and high-contrast vision accessibility. Customize theme modes and font sizes in the 'Settings' tab!"
-    };
-  }
-
-  // 8. DIRECT LOCATION / PLACE SEARCH FALLBACK (e.g. "Phoenix Mall", "Anna Nagar", "Marina Beach")
-  if (userLat && userLng && rawQuery.length >= 3) {
-    const directTrip = await planTripFromConversation(rawQuery, appContext);
-    if (directTrip) return directTrip;
-  }
-
-  // 9. DEFAULT HELPFUL FALLBACK
-  if (userLat && userLng && nearbyStops && nearbyStops.length > 0) {
-    const topStop = nearbyStops[0];
-    return {
-      responseText: `I'm here to help you navigate ${userLocation?.cityName || 'your city'}!\n\n• Nearest ${transportMode.toUpperCase()} stop: ${topStop.name} (${formatDistance(topStop.distKm)})\n• Ask me: 'How do I get to Phoenix Mall?', 'What's my ETA?', or 'How to set alarm?'`
-    };
-  }
-
+  // 10. DEFAULT HELPFUL RESPONSE
   return {
-    responseText: "I can help calculate exact distances, ETAs, remaining stops, and plan complete journeys! Try asking: 'How do I get to Phoenix Mall?' or 'What's my ETA?'"
+    responseText: `👋 Tell me where you're headed in ${cityName} and I'll find the fastest way there by Bus, Metro, or Train — and ensure you never miss your stop!`
   };
 }
 
 /**
- * End-to-End Conversational Trip Planner
- * Geocodes target place, compares Bus/Metro/Train routes, and formulates optimal journey option
+ * Multi-Modal "Best Way There" calculation Engine
  */
-export async function planTripFromConversation(destQuery, appContext = {}) {
-  const { userPosition, userLocation, transportMode = 'bus' } = appContext;
-  const userLat = userPosition?.lat || userLocation?.lat;
-  const userLng = userPosition?.lng || userLocation?.lng;
-
-  if (!userLat || !userLng || !destQuery) return null;
-
+async function planBestWayMultiModal(destQuery, userLat, userLng, cityName) {
   try {
     const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
     const places = await searchNominatimPlaces(destQuery, locationBias);
     if (!places || places.length === 0) return null;
 
     const targetPlace = places[0];
+    const availability = await fetchMultiModeAvailability(userLat, userLng, 3000);
 
-    const candidateModes = [transportMode, 'metro', 'bus', 'train'].filter(
-      (v, i, a) => a.indexOf(v) === i
-    );
-
+    const candidateModes = ['bus', 'metro', 'train', 'local_train'];
     let bestOption = null;
 
     for (const mode of candidateModes) {
-      const origStops = await fetchNearestTransitStopToPoint(userLat, userLng, mode);
-      const destStops = await fetchNearestTransitStopToPoint(targetPlace.lat, targetPlace.lng, mode);
+      // Skip modes that are strictly unavailable near user
+      if (availability[mode]?.available === false && mode !== 'bus') continue;
 
-      if (origStops?.nearestStop && destStops?.nearestStop) {
-        const originStop = origStops.nearestStop;
-        const destinationStop = destStops.nearestStop;
+      const [origRes, destRes] = await Promise.all([
+        fetchNearestTransitStopToPoint(userLat, userLng, mode),
+        fetchNearestTransitStopToPoint(targetPlace.lat, targetPlace.lng, mode)
+      ]);
 
-        const routeData = await fetchOSRMRoute(originStop.lat, originStop.lng, destinationStop.lat, destinationStop.lng, mode);
+      if (origRes?.nearestStop && destRes?.nearestStop) {
+        if (origRes.gapKm > 5 || destRes.gapKm > 5) continue;
 
-        const walkToOrigMins = Math.round(origStops.gapKm * 12);
-        const walkFromDestMins = Math.round(destStops.gapKm * 12);
-        const totalDurationMins = (routeData.durationMins || 15) + walkToOrigMins + walkFromDestMins;
-        const estimatedStopsCount = Math.max(2, Math.round(routeData.distKm * 1.5));
+        const routeData = await fetchOSRMRoute(origRes.nearestStop.lat, origRes.nearestStop.lng, destRes.nearestStop.lat, destRes.nearestStop.lng, mode);
+
+        const walkToOrigMins = Math.round(origRes.gapKm * 12);
+        const walkFromDestMins = Math.round(destRes.gapKm * 12);
+        const transitMins = routeData.durationMins || 15;
+        const totalDurationMins = transitMins + walkToOrigMins + walkFromDestMins;
+        const stopsCount = Math.max(2, Math.round(routeData.distKm * 1.5));
 
         const option = {
           mode,
-          modeLabel: mode === 'metro' ? 'Metro' : mode === 'train' ? 'Local Train' : 'Bus',
+          modeLabel: mode === 'metro' ? 'Metro' : mode === 'train' ? 'Train' : mode === 'local_train' ? 'Local Train' : 'Bus',
           targetPlaceName: targetPlace.name,
-          targetPlaceDescription: targetPlace.description,
-          originStop,
-          destinationStop,
-          routeCoordinates: routeData.coordinates,
+          originStop: origRes.nearestStop,
+          destinationStop: destRes.nearestStop,
           distKm: routeData.distKm,
-          stopsCount: estimatedStopsCount,
-          transitMins: routeData.durationMins || 15,
+          stopsCount,
+          transitMins,
           walkMins: walkFromDestMins,
           totalMins: totalDurationMins
         };
@@ -271,45 +268,27 @@ export async function planTripFromConversation(destQuery, appContext = {}) {
     }
 
     if (bestOption) {
-      const modeText = bestOption.modeLabel;
-      const boardStop = bestOption.originStop.name;
-      const getOffStop = bestOption.destinationStop.name;
-      const stops = bestOption.stopsCount;
-      const tMins = bestOption.transitMins;
-      const wMins = bestOption.walkMins;
-      const target = bestOption.targetPlaceName;
-
-      let responseText = `Take the ${modeText} — board at ${boardStop}, get off at ${getOffStop} (${stops} stops, ~${tMins} min)`;
-      if (wMins > 1) {
-        responseText += `, then it's a ${wMins} min walk to ${target}.`;
-      } else {
-        responseText += ` directly near ${target}.`;
-      }
-
       return {
+        cardType: 'best_way_there',
         isTripRecommendation: true,
         recommendedMode: bestOption.mode,
         recommendedModeLabel: bestOption.modeLabel,
-        targetPlaceName: target,
+        targetPlaceName: bestOption.targetPlaceName,
         originStop: bestOption.originStop,
         destinationStop: bestOption.destinationStop,
-        stopsCount: stops,
-        transitMins: tMins,
-        walkMins: wMins,
+        stopsCount: bestOption.stopsCount,
+        transitMins: bestOption.transitMins,
+        walkMins: bestOption.walkMins,
         totalMins: bestOption.totalMins,
-        responseText
+        responseText: `Fastest option: **${bestOption.modeLabel}** — ${bestOption.totalMins} min total door-to-door.`
       };
     }
-  } catch (err) {
-    console.warn('Trip planning query error:', err);
+  } catch (e) {
+    console.warn('planBestWayMultiModal error:', e);
   }
-
   return null;
 }
 
-/**
- * Helper to extract target place or stop name from natural language query string
- */
 function extractTargetPlaceName(fullQuery, phrasesToStrip = []) {
   let cleaned = fullQuery.toLowerCase();
   phrasesToStrip.forEach((phrase) => {

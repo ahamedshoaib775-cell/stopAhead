@@ -282,3 +282,101 @@ export async function createStopReport(reportData) {
   localStorage.setItem(localKey, JSON.stringify(updated));
   return record;
 }
+
+/**
+ * Chat Conversation & Message Persistence (Supabase DB + Local Storage Fallback)
+ */
+export async function fetchChatConversations(userId) {
+  const localKey = `stopahead_chat_convs_${userId || 'guest'}`;
+  if (!userId) {
+    try { return JSON.parse(localStorage.getItem(localKey) || '[]'); } catch (e) { return []; }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      localStorage.setItem(localKey, JSON.stringify(data));
+      return data;
+    }
+  } catch (e) {}
+
+  try { return JSON.parse(localStorage.getItem(localKey) || '[]'); } catch (e) { return []; }
+}
+
+export async function createChatConversation(userId, title = 'New Conversation') {
+  const record = {
+    id: `conv-${Date.now()}`,
+    user_id: userId || 'guest',
+    title,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  const localKey = `stopahead_chat_convs_${userId || 'guest'}`;
+  const existing = await fetchChatConversations(userId);
+  const updated = [record, ...existing];
+  localStorage.setItem(localKey, JSON.stringify(updated));
+
+  if (userId) {
+    try {
+      const { data } = await supabase.from('chat_conversations').insert([record]).select();
+      if (data && data.length > 0) return data[0];
+    } catch (e) {}
+  }
+  return record;
+}
+
+export async function fetchChatMessages(conversationId) {
+  if (!conversationId) return [];
+  const localKey = `stopahead_chat_msgs_${conversationId}`;
+
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+
+    if (!error && Array.isArray(data)) {
+      localStorage.setItem(localKey, JSON.stringify(data));
+      return data;
+    }
+  } catch (e) {}
+
+  try { return JSON.parse(localStorage.getItem(localKey) || '[]'); } catch (e) { return []; }
+}
+
+export async function saveChatMessage(conversationId, role, content, metadata = {}) {
+  if (!conversationId) return null;
+
+  const msgRecord = {
+    id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    conversation_id: conversationId,
+    role,
+    content,
+    metadata,
+    created_at: new Date().toISOString()
+  };
+
+  const localKey = `stopahead_chat_msgs_${conversationId}`;
+  const existing = await fetchChatMessages(conversationId);
+  const updated = [...existing, msgRecord];
+  localStorage.setItem(localKey, JSON.stringify(updated));
+
+  try {
+    await supabase.from('chat_messages').insert([{
+      conversation_id: conversationId,
+      role,
+      content,
+      metadata
+    }]);
+  } catch (e) {}
+
+  return msgRecord;
+}
+
