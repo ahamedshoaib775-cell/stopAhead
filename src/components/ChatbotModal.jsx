@@ -81,6 +81,8 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
     const cleanText = (queryText || '').trim();
     if (!cleanText || isProcessing) return;
 
+    console.log('[StopAhead UI] User sending chat query:', cleanText);
+
     const userMsg = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -98,6 +100,8 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
 
     try {
       const res = await processAssistantQuery(cleanText, appContext);
+      console.log('[StopAhead UI] Assistant processed response:', res);
+
       let botMsg = {};
 
       if (typeof res === 'object' && res !== null) {
@@ -107,6 +111,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
           text: res.responseText || res.text || '',
           data: res
         };
+
 
         // Handle direct trip alert creation from chat
         if (res.cardType === 'alert_created' && onStartTrip && res.destinationStop) {
