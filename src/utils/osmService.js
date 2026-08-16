@@ -247,91 +247,138 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000, tr
     return emptyResult;
   }
 
-  // 1. Try fast Overpass API query at requested radius & expanded 5km radius
-  try {
-    const stops = await executeOverpassQuery(lat, lng, radiusMeters, transportMode);
-    if (stops && stops.length > 0) {
-      stops.radiusUsedKm = Math.round(radiusMeters / 1000);
-      return stops;
-    }
+  const requestedRadiusKm = Math.round(radiusMeters / 1000);
 
-    if (radiusMeters < 5000) {
-      const stops5k = await executeOverpassQuery(lat, lng, 5000, transportMode);
-      if (stops5k && stops5k.length > 0) {
-        stops5k.radiusUsedKm = 5;
-        return stops5k;
-      }
+  // Helper to filter out any stop exceeding maxKm and sort nearest-first
+  const processAndFilterStops = (stopsArray, maxKm) => {
+    if (!stopsArray || stopsArray.length === 0) return [];
+    return stopsArray
+      .filter((s) => s && typeof s.distKm === 'number' && s.distKm <= maxKm)
+      .sort((a, b) => a.distKm - b.distKm);
+  };
+
+  const KNOWN_CHENNAI_BUS_STOPS = [
+    { name: 'Poonamallee Bus Terminus', lat: 13.0485, lng: 80.0995, description: 'MTC Bus Terminus' },
+    { name: 'Poonamallee Bypass Bus Stop', lat: 13.0512, lng: 80.1042, description: 'MTC Bus Stop' },
+    { name: 'Poonamallee Trunk Road', lat: 13.0468, lng: 80.0955, description: 'MTC Bus Stop' },
+    { name: 'Kumananchavadi Bus Stop', lat: 13.0450, lng: 80.1120, description: 'MTC Bus Stop' },
+    { name: 'Saveetha Dental College Stop', lat: 13.0560, lng: 80.0820, description: 'MTC Bus Stop' },
+    { name: 'Saidapet Bus Stand', lat: 13.0232, lng: 80.2238, description: 'MTC Bus Stand' },
+    { name: 'Guindy Bus Stop', lat: 13.0067, lng: 80.2020, description: 'MTC Bus Stop' },
+    { name: 'Koyambedu CMBT Bus Terminus', lat: 13.0694, lng: 80.1948, description: 'CMBT Terminus' },
+    { name: 'T. Nagar Bus Terminus', lat: 13.0418, lng: 80.2341, description: 'MTC Bus Terminus' },
+    { name: 'Broadway Bus Terminus', lat: 13.0891, lng: 80.2854, description: 'MTC Terminus' }
+  ];
+
+  // 1. Try requested radius
+  try {
+    const rawStops = await executeOverpassQuery(lat, lng, radiusMeters, transportMode);
+    const filteredStops = processAndFilterStops(rawStops, requestedRadiusKm);
+    if (filteredStops.length > 0) {
+      filteredStops.radiusUsedKm = requestedRadiusKm;
+      return filteredStops;
     }
   } catch (err) {
     console.warn('[StopAhead Overpass] Overpass query notice:', err.message);
   }
 
-  // 2. High-speed Nominatim fallback ONLY for bus mode if Overpass endpoints rate limit
+  // 2. Bus dataset fallback at requested radius
   if (transportMode === 'bus') {
     try {
-      const locationBias = { lat, lng, delta: 0.12, bounded: false };
-      const fallbackPlaces = await searchNominatimPlaces('Bus Stop', locationBias);
-      if (fallbackPlaces && fallbackPlaces.length > 0) {
-        const validStops = fallbackPlaces.map((p) => {
-          const distKm = parseFloat(calculateHaversineDistance(lat, lng, p.lat, p.lng).toFixed(1));
+      const localStops = KNOWN_CHENNAI_BUS_STOPS.map((s) => {
+        const distKm = parseFloat(calculateHaversineDistance(lat, lng, s.lat, s.lng).toFixed(1));
+        return {
+          id: `known-${s.lat}-${s.lng}`,
+          name: s.name,
+          description: s.description,
+          lat: s.lat,
+          lng: s.lng,
+          distKm,
+          transportMode: 'bus'
+        };
+      });
+
+      const filteredKnown = processAndFilterStops(localStops, requestedRadiusKm);
+      if (filteredKnown.length > 0) {
+        filteredKnown.radiusUsedKm = requestedRadiusKm;
+        return filteredKnown;
+      }
+    } catch (err) {
+      console.warn('[StopAhead Overpass] Bus fallback notice:', err.message);
+    }
+  }
+
+  // 3. Stepwise Auto-Expand: 5km
+  if (radiusMeters < 5000) {
+    try {
+      const raw5k = await executeOverpassQuery(lat, lng, 5000, transportMode);
+      const filtered5k = processAndFilterStops(raw5k, 5.0);
+      if (filtered5k.length > 0) {
+        filtered5k.radiusUsedKm = 5;
+        return filtered5k;
+      }
+
+      if (transportMode === 'bus') {
+        const localStops5k = KNOWN_CHENNAI_BUS_STOPS.map((s) => {
+          const distKm = parseFloat(calculateHaversineDistance(lat, lng, s.lat, s.lng).toFixed(1));
           return {
-            id: p.id,
-            name: p.name,
-            description: p.description || 'Bus Stop',
-            lat: p.lat,
-            lng: p.lng,
+            id: `known-${s.lat}-${s.lng}`,
+            name: s.name,
+            description: s.description,
+            lat: s.lat,
+            lng: s.lng,
             distKm,
             transportMode: 'bus'
           };
         });
 
-        if (validStops.length > 0) {
-          validStops.sort((a, b) => a.distKm - b.distKm);
-          validStops.radiusUsedKm = Math.round(radiusMeters / 1000);
-          return validStops;
+        const filteredKnown5k = processAndFilterStops(localStops5k, 5.0);
+        if (filteredKnown5k.length > 0) {
+          filteredKnown5k.radiusUsedKm = 5;
+          return filteredKnown5k;
         }
       }
-    } catch (err) {
-      console.warn('[StopAhead Overpass] Bus Nominatim fallback notice:', err.message);
-    }
+    } catch (e) {}
+  }
 
-    // 3. Known Chennai & Metropolitan Bus Termini Dataset Fallback (Guarantees Poonamallee bus coverage)
-    const KNOWN_CHENNAI_BUS_STOPS = [
-      { name: 'Poonamallee Bus Terminus', lat: 13.0485, lng: 80.0995, description: 'MTC Bus Terminus' },
-      { name: 'Poonamallee Bypass Bus Stop', lat: 13.0512, lng: 80.1042, description: 'MTC Bus Stop' },
-      { name: 'Poonamallee Trunk Road', lat: 13.0468, lng: 80.0955, description: 'MTC Bus Stop' },
-      { name: 'Kumananchavadi Bus Stop', lat: 13.0450, lng: 80.1120, description: 'MTC Bus Stop' },
-      { name: 'Saveetha Dental College Stop', lat: 13.0560, lng: 80.0820, description: 'MTC Bus Stop' },
-      { name: 'Saidapet Bus Stand', lat: 13.0232, lng: 80.2238, description: 'MTC Bus Stand' },
-      { name: 'Guindy Bus Stop', lat: 13.0067, lng: 80.2020, description: 'MTC Bus Stop' },
-      { name: 'Koyambedu CMBT Bus Terminus', lat: 13.0694, lng: 80.1948, description: 'CMBT Terminus' },
-      { name: 'T. Nagar Bus Terminus', lat: 13.0418, lng: 80.2341, description: 'MTC Bus Terminus' },
-      { name: 'Broadway Bus Terminus', lat: 13.0891, lng: 80.2854, description: 'MTC Terminus' }
-    ];
+  // 4. Stepwise Auto-Expand: 10km
+  if (radiusMeters < 10000) {
+    try {
+      const raw10k = await executeOverpassQuery(lat, lng, 10000, transportMode);
+      const filtered10k = processAndFilterStops(raw10k, 10.0);
+      if (filtered10k.length > 0) {
+        filtered10k.radiusUsedKm = 10;
+        return filtered10k;
+      }
 
-    const nearbyKnownStops = KNOWN_CHENNAI_BUS_STOPS.map((s) => {
-      const distKm = parseFloat(calculateHaversineDistance(lat, lng, s.lat, s.lng).toFixed(1));
-      return {
-        id: `known-${s.lat}-${s.lng}`,
-        name: s.name,
-        description: s.description,
-        lat: s.lat,
-        lng: s.lng,
-        distKm,
-        transportMode: 'bus'
-      };
-    }).filter((s) => s.distKm <= 12.0).sort((a, b) => a.distKm - b.distKm);
+      if (transportMode === 'bus') {
+        const localStops10k = KNOWN_CHENNAI_BUS_STOPS.map((s) => {
+          const distKm = parseFloat(calculateHaversineDistance(lat, lng, s.lat, s.lng).toFixed(1));
+          return {
+            id: `known-${s.lat}-${s.lng}`,
+            name: s.name,
+            description: s.description,
+            lat: s.lat,
+            lng: s.lng,
+            distKm,
+            transportMode: 'bus'
+          };
+        });
 
-    if (nearbyKnownStops.length > 0) {
-      nearbyKnownStops.radiusUsedKm = Math.round(radiusMeters / 1000);
-      return nearbyKnownStops;
-    }
+        const filteredKnown10k = processAndFilterStops(localStops10k, 10.0);
+        if (filteredKnown10k.length > 0) {
+          filteredKnown10k.radiusUsedKm = 10;
+          return filteredKnown10k;
+        }
+      }
+    } catch (e) {}
   }
 
   const emptyStops = [];
-  emptyStops.radiusUsedKm = Math.round(radiusMeters / 1000);
+  emptyStops.radiusUsedKm = requestedRadiusKm;
   return emptyStops;
 }
+
 
 
 
