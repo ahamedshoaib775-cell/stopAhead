@@ -94,35 +94,8 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
   const startTime = Date.now();
   console.log(`[StopAhead AI Lifecycle] 1. Message received at ${new Date().toLocaleTimeString()}: "${userQuery}"`);
 
-  // Step 1: Log exact Supabase Edge Function URL being called
-  const edgeFunctionEndpoint = 'https://lsxgnetnunitodnhdfmi.supabase.co/functions/v1/chatbot';
-  console.log(`[Supabase Edge Function Call]: Calling endpoint -> "${edgeFunctionEndpoint}"`);
-
-  try {
-    const fnResponse = await fetch(edgeFunctionEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer sb_publishable_BfUztLTrag7zxWAYgVxhKQ_D2oCl_wA`
-      },
-      body: JSON.stringify({ message: userQuery, appContext })
-    }).catch(err => ({ status: 0, statusText: err.message, ok: false }));
-
-    if (fnResponse && fnResponse.status === 404) {
-      console.warn(`[Supabase Edge Function 404 Notice]: Function 'chatbot' returned HTTP 404 at "${edgeFunctionEndpoint}". Function exists in code (supabase/functions/chatbot/index.ts) but is not deployed to Supabase Cloud. Executing client-side assistant engine fallback.`);
-    } else if (fnResponse && fnResponse.ok) {
-      const data = await fnResponse.json();
-      if (data && data.responseText) {
-        console.log(`[Supabase Edge Function Success]: HTTP 200 OK from "${edgeFunctionEndpoint}"`);
-        return data;
-      }
-    }
-  } catch (fnErr) {
-    console.warn(`[Supabase Edge Function Exception]: Endpoint "${edgeFunctionEndpoint}" failed:`, fnErr);
-  }
-
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('CHATBOT_TIMEOUT')), 25000);
+    setTimeout(() => reject(new Error('CHATBOT_TIMEOUT')), 10000);
   });
 
   try {
@@ -138,7 +111,7 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
       isError: true,
       cardType: 'error_timeout',
       rawQuery: userQuery,
-      responseText: `I found '${userQuery}', but couldn't reach the transit stop database right now. Try again in a moment, or click retry below.`
+      responseText: `Couldn't resolve transit data for '${userQuery}'. Please try again!`
     };
   }
 }
@@ -410,9 +383,7 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
     // 2. Compute OSRM route & haversine distance to target place
     const directDistKm = parseFloat(calculateHaversineDistance(userLat, userLng, targetPlace.lat, targetPlace.lng).toFixed(1));
     
-    // 3. Fetch single nearest transit stop for active transport mode to avoid overloading public mirrors
-    const primaryStopRes = await fetchNearestTransitStopToPoint(targetPlace.lat, targetPlace.lng, 'bus').catch(() => null);
-    const destStopObj = primaryStopRes?.nearestStop || {
+    const destStopObj = {
       id: `place-${targetPlace.lat}-${targetPlace.lng}`,
       name: targetName,
       description: targetPlace.description || 'OpenStreetMap Place',
