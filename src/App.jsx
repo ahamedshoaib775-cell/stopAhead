@@ -20,11 +20,13 @@ import BestWayThereModal from './components/BestWayThereModal';
 import { supabase } from './utils/supabaseClient';
 import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports } from './utils/dbService';
 import { calculateHaversineDistance, calculateBearing } from './utils/geoHelper';
-import { fetchOSRMRoute } from './utils/osmService';
+import { fetchOSRMRoute, reverseGeocodeLocation } from './utils/osmService';
+import { requestBrowserLocation } from './utils/locationService';
 import { triggerVibration, stopVibration } from './utils/vibrationHelper';
 import { playSoundPreset, stopAlertLoop } from './utils/audioSynthesizer';
 import { speakVoiceAlert, stopVoiceAlert } from './utils/speechService';
 import { Loader2, Bot, MessageSquare } from 'lucide-react';
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -160,8 +162,16 @@ export default function App() {
     if (settings.fontSizeScale === 'xl') document.body.classList.add('font-xl');
   }, [settings]);
 
-  // Live Continuous Geolocation watchPosition Hook with Heading Rotation
+  // Live Continuous Geolocation watchPosition Hook with Heading Rotation & Location Synchronization
   useEffect(() => {
+    // 1. Initial browser location request on app startup
+    requestBrowserLocation().then((locData) => {
+      if (locData && locData.success) {
+        console.log('[StopAhead GPS] Initialized userLocation:', locData);
+        setUserLocation(locData);
+      }
+    });
+
     if (!navigator.geolocation) return;
 
     console.log('[StopAhead GPS] Subscribing to continuous navigator.geolocation.watchPosition...');
@@ -175,12 +185,26 @@ export default function App() {
             computedHeading = calculateBearing(prev.lat, prev.lng, lat, lng);
           }
 
-          console.log(`[StopAhead GPS] watchPosition update: Lat ${lat.toFixed(4)}, Lng ${lng.toFixed(4)}, Heading: ${computedHeading || 0}°`);
           return {
             lat,
             lng,
             heading: computedHeading || prev?.heading || 0
           };
+        });
+
+        // Keep userLocation synchronized with live GPS coordinates so map & search queries never drift out of sync!
+        setUserLocation((prevLoc) => {
+          if (!prevLoc || Math.abs(prevLoc.lat - lat) > 0.0005 || Math.abs(prevLoc.lng - lng) > 0.0005) {
+            console.log(`[StopAhead GPS] Syncing userLocation: Lat ${lat.toFixed(4)}, Lng ${lng.toFixed(4)}`);
+            return {
+              ...prevLoc,
+              lat,
+              lng,
+              cityName: prevLoc?.cityName || 'Current Location',
+              success: true
+            };
+          }
+          return prevLoc;
         });
       },
       (err) => {
@@ -194,10 +218,11 @@ export default function App() {
     );
 
     return () => {
-      console.log('[StopAhead GPS] Clearing watchPosition listener (cleaning up memory & battery)...');
+      console.log('[StopAhead GPS] Clearing watchPosition listener...');
       navigator.geolocation.clearWatch(watchId);
     };
   }, []);
+
 
   // Active Trip State & Alarm State Machine (idle -> approaching -> alarm_triggered -> dismissed -> idle)
   const [activeTrip, setActiveTrip] = useState(null);

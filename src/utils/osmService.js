@@ -154,14 +154,20 @@ async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
       way["amenity"="ferry_terminal"](around:${radiusMeters},${lat},${lng});
     `;
   } else {
-    // Bus (default)
+    // Bus (default) - Expanded OSM tag filters for MTC / Indian transit stops
     queryBody = `
       node["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});
-      way["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});
       node["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});
+      node["public_transport"="platform"]["bus"="yes"](around:${radiusMeters},${lat},${lng});
+      node["public_transport"="stop_position"]["bus"="yes"](around:${radiusMeters},${lat},${lng});
+      node["bus"="yes"](around:${radiusMeters},${lat},${lng});
+      way["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});
       way["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});
+      way["public_transport"="platform"](around:${radiusMeters},${lat},${lng});
+      relation["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});
     `;
   }
+
 
   const overpassQuery = `[out:json][timeout:4];\n(\n${queryBody}\n);\nout center 35;`;
 
@@ -256,10 +262,41 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000, tr
     console.warn('[StopAhead Overpass] Overpass query notice:', err.message);
   }
 
+  // 2. High-speed Nominatim fallback ONLY for bus mode if Overpass endpoints rate limit
+  if (transportMode === 'bus') {
+    try {
+      const locationBias = { lat, lng, delta: 0.08, bounded: true };
+      const fallbackPlaces = await searchNominatimPlaces('bus stop', locationBias);
+      if (fallbackPlaces && fallbackPlaces.length > 0) {
+        const validStops = fallbackPlaces.map((p) => {
+          const distKm = parseFloat(calculateHaversineDistance(lat, lng, p.lat, p.lng).toFixed(1));
+          return {
+            id: p.id,
+            name: p.name,
+            description: p.description || 'Bus Stop',
+            lat: p.lat,
+            lng: p.lng,
+            distKm,
+            transportMode: 'bus'
+          };
+        });
+
+        if (validStops.length > 0) {
+          validStops.sort((a, b) => a.distKm - b.distKm);
+          validStops.radiusUsedKm = Math.round(radiusMeters / 1000);
+          return validStops;
+        }
+      }
+    } catch (err) {
+      console.warn('[StopAhead Overpass] Bus Nominatim fallback notice:', err.message);
+    }
+  }
+
   const emptyStops = [];
   emptyStops.radiusUsedKm = Math.round(radiusMeters / 1000);
   return emptyStops;
 }
+
 
 
 /**

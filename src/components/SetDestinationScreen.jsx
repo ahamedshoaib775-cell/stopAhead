@@ -125,12 +125,28 @@ export default function SetDestinationScreen({
     if (!userLocation?.lat || !userLocation?.lng) return;
 
     setIsLoadingNearby(true);
-    try {
-      const stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, radiusMeters, currentMode);
-      setSearchedRadiusKm(stops.radiusUsedKm || Math.round(radiusMeters / 1000));
-      setNearbyStops(stops);
+    console.log(`[StopAhead Overpass Query] Executing for ${currentMode} at Lat: ${userLocation.lat.toFixed(4)}, Lng: ${userLocation.lng.toFixed(4)}, Radius: ${radiusMeters}m`);
 
-      if (stops.length > 0) {
+    try {
+      let stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, radiusMeters, currentMode);
+      let usedRad = stops.radiusUsedKm || Math.round(radiusMeters / 1000);
+
+      // Auto-expand search radius if 0 stops are returned
+      if ((!stops || stops.length === 0) && radiusMeters < 5000) {
+        console.log(`[StopAhead Overpass] 0 stops at ${radiusMeters}m, auto-expanding to 5000m...`);
+        stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, 5000, currentMode);
+        usedRad = 5;
+      }
+      if ((!stops || stops.length === 0) && usedRad < 10) {
+        console.log(`[StopAhead Overpass] 0 stops at 5km, auto-expanding to 10000m...`);
+        stops = await fetchOverpassNearbyStops(userLocation.lat, userLocation.lng, 10000, currentMode);
+        usedRad = 10;
+      }
+
+      setSearchedRadiusKm(usedRad);
+      setNearbyStops(stops || []);
+
+      if (stops && stops.length > 0) {
         setSelectedOriginStop({
           id: 'current-pos',
           name: `Current Location (${userLocation.cityName || 'Nearby'})`,
@@ -151,6 +167,7 @@ export default function SetDestinationScreen({
   useEffect(() => {
     loadNearbyStops(2500, transportMode);
   }, [userLocation?.lat, userLocation?.lng, userLocation?.cityName, transportMode]);
+
 
   // Location-Aware Nominatim Search across all place types (malls, stores, landmarks, addresses)
   useEffect(() => {
@@ -344,6 +361,14 @@ export default function SetDestinationScreen({
           </div>
         )}
 
+        {/* Visible Debug Coords Chip */}
+        {userLocation?.lat && (
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginBottom: '0.35rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.03)', padding: '0.25rem 0.55rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+            <span>📍 Map Center: {userLocation.lat.toFixed(4)}°N, {userLocation.lng.toFixed(4)}°E</span>
+            <span>Overpass: {searchedRadiusKm}km ({transportMode.toUpperCase()})</span>
+          </div>
+        )}
+
         <LeafletMap
           currentCoords={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : null}
           originCoords={selectedOriginStop ? [selectedOriginStop.lat, selectedOriginStop.lng] : null}
@@ -355,6 +380,7 @@ export default function SetDestinationScreen({
           height="170px"
           onExpandFullScreen={onExpandFullScreen}
         />
+
       </div>
 
       {/* Destination Stop Section */}
