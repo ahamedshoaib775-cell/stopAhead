@@ -176,10 +176,40 @@ export async function searchNominatimWithBroadenedFallback(query, locationBias =
 }
 
 
+const OVERPASS_CACHE = new Map();
+const OVERPASS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes TTL
+
+function getCachedOverpassQuery(cacheKey) {
+  const item = OVERPASS_CACHE.get(cacheKey);
+  if (item && (Date.now() - item.timestamp < OVERPASS_CACHE_TTL)) {
+    console.log(`[StopAhead Overpass Cache Hit]: Key "${cacheKey}"`);
+    return item.data;
+  }
+  return null;
+}
+
+function setCachedOverpassQuery(cacheKey, data) {
+  if (data) {
+    OVERPASS_CACHE.set(cacheKey, { timestamp: Date.now(), data });
+  }
+}
+
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.nchc.org.tw/api/interpreter'
+];
+
 /**
  * Helper to dispatch a single Overpass API query with expanded tag filters strictly per transport mode
  */
 async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
+  const cacheKey = `op_${lat.toFixed(3)}_${lng.toFixed(3)}_${radiusMeters}_${transportMode}`;
+  const cached = getCachedOverpassQuery(cacheKey);
+  if (cached) return cached;
+
   let queryBody = '';
 
   if (transportMode === 'metro' || transportMode === 'subway') {
@@ -208,7 +238,6 @@ async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
       way["amenity"="ferry_terminal"](around:${radiusMeters},${lat},${lng});
     `;
   } else {
-    // Bus (default) - Expanded OSM tag filters for MTC / Indian transit stops
     queryBody = `
       node["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});
       node["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});
@@ -222,17 +251,11 @@ async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
     `;
   }
 
+  const overpassQuery = `[out:json][timeout:3];\n(\n${queryBody}\n);\nout center 35;`;
 
-  const overpassQuery = `[out:json][timeout:4];\n(\n${queryBody}\n);\nout center 35;`;
-
-  const endpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter'
-  ];
-
-  for (const endpoint of endpoints) {
+  for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 2800); // 2.8s fast failover per mirror
 
     try {
       const response = await fetch(endpoint, {
@@ -243,7 +266,10 @@ async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
       });
 
       clearTimeout(timeoutId);
-      if (!response.ok) continue;
+      if (!response.ok) {
+        console.warn(`[StopAhead Overpass Mirror Notice]: ${endpoint} returned HTTP ${response.status}`);
+        continue;
+      }
 
       const data = await response.json();
 
@@ -276,15 +302,18 @@ async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {
         }
 
         parsedStops.sort((a, b) => a.distKm - b.distKm);
+        setCachedOverpassQuery(cacheKey, parsedStops);
         return parsedStops;
       }
     } catch (e) {
       clearTimeout(timeoutId);
+      console.warn(`[StopAhead Overpass Mirror Failover]: ${endpoint} failed (${e.message}). Retrying next mirror...`);
     }
   }
 
   return [];
 }
+
 
 /**
  * Overpass API Live OpenStreetMap Query for nearby transit stops strictly filtered by transport mode
@@ -461,7 +490,7 @@ export async function fetchMultiModeAvailability(lat, lng, radiusMeters = 3000) 
     local_train: { available: false, message: 'No local train station within 3km' }
   };
 
-  const overpassBatchQuery = `[out:json][timeout:4];
+  const overpassBatchQuery = `[out:json][timeout:3];
 (
   node["highway"="bus_stop"](around:${radiusMeters},${lat},${lng});
   node["amenity"="bus_station"](around:${radiusMeters},${lat},${lng});
@@ -470,14 +499,10 @@ export async function fetchMultiModeAvailability(lat, lng, radiusMeters = 3000) 
 );
 out tags 60;`;
 
-  const endpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter'
-  ];
-
-  for (const endpoint of endpoints) {
+  for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 2800);
+
 
     try {
       const response = await fetch(endpoint, {
@@ -780,14 +805,10 @@ export async function fetchOsmRouteRelationsBetweenPoints(origLat, origLng, dest
 );
 out tags 20;`;
 
-  const endpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter'
-  ];
-
-  for (const endpoint of endpoints) {
+  for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 2800);
+
 
     try {
       const response = await fetch(endpoint, {

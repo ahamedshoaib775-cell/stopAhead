@@ -18,6 +18,8 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
   const userId = user?.id || null;
 
   const [conversationId, setConversationId] = useState(null);
+  const [thinkingStatus, setThinkingStatus] = useState('StopAhead AI is resolving destination & transit data...');
+
   const [messages, setMessages] = useState([
     {
       id: 'welcome-1',
@@ -762,11 +764,12 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
               <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(2, 90, 237, 0.1)', border: '1px solid #025AED', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#025AED' }}>
                 <Bot size={14} />
               </div>
-              <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic' }}>
-                StopAhead AI is thinking & calculating transit data...
+              <div style={{ fontSize: '0.78rem', color: '#025AED', fontWeight: 600, fontStyle: 'italic' }}>
+                {thinkingStatus || 'StopAhead AI is resolving transit data...'}
               </div>
             </div>
           )}
+
           <div ref={messagesEndRef} />
         </div>
 

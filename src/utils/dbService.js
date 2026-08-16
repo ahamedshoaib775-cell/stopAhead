@@ -368,17 +368,25 @@ export async function saveChatMessage(conversationId, role, content, metadata = 
   const updated = [...existing, msgRecord];
   localStorage.setItem(localKey, JSON.stringify(updated));
 
-  try {
-    await supabase.from('chat_messages').insert([{
-      conversation_id: conversationId,
-      role,
-      content,
-      metadata
-    }]);
-  } catch (e) {}
+  if (userId) {
+    try {
+      const { error } = await supabase.from('chat_messages').insert([{
+        conversation_id: conversationId,
+        role,
+        content,
+        metadata
+      }]);
+      if (error) {
+        console.warn('[StopAhead DB Notice] Chat message insert notice:', error.message);
+      }
+    } catch (e) {
+      console.warn('[StopAhead DB Exception] Chat message insert exception:', e);
+    }
+  }
 
   return msgRecord;
 }
+
 
 /**
  * Clear/delete all chat messages for a specific conversation in Supabase & Local Storage
