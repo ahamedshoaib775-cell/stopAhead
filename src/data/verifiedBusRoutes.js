@@ -165,6 +165,93 @@ export const CANONICAL_STOP_ALIASES = {
   'government estate': [
     'government estate',
     'government estate metro'
+  ],
+  'anna nagar': [
+    'anna nagar',
+    'anna nagar west',
+    'anna nagar east',
+    'anna nagar depot',
+    'tower park'
+  ],
+  'vadapalani': [
+    'vadapalani',
+    'vadapalani bus depot',
+    'vadapalani junction'
+  ],
+  'chromepet': [
+    'chromepet',
+    'chromepet bus stop',
+    'chromepet railway station',
+    'mit'
+  ],
+  'ambattur': [
+    'ambattur',
+    'ambattur ot',
+    'ambattur industrial estate',
+    'ambattur bs'
+  ],
+  'avadi': [
+    'avadi',
+    'avadi bus terminus',
+    'avadi b.s.',
+    'avadi railway station'
+  ],
+  'red hills': [
+    'red hills',
+    'red hills bus terminus'
+  ],
+  'thiruvanmiyur': [
+    'thiruvanmiyur',
+    'thiruvanmiyur bus depot',
+    'thiruvanmiyur rto'
+  ],
+  'sholinganallur': [
+    'sholinganallur',
+    'sholinganallur junction'
+  ],
+  'siruseri': [
+    'siruseri',
+    'sipcot',
+    'siruseri sipcot'
+  ],
+  'perungudi': [
+    'perungudi',
+    'kandanchavadi'
+  ],
+  'ashok nagar': [
+    'ashok nagar',
+    'ashok pillar'
+  ],
+  'kk nagar': [
+    'kk nagar',
+    'kk nagar bus depot'
+  ],
+  'triplicane': [
+    'triplicane',
+    'ice house'
+  ],
+  'kilpauk': [
+    'kilpauk',
+    'kilpauk medical college',
+    'kmc'
+  ],
+  'icf': [
+    'icf',
+    'icf bus stop',
+    'villivakkam'
+  ],
+  'perambur': [
+    'perambur',
+    'perambur railway station',
+    'perambur bs'
+  ],
+  'medavakkam': [
+    'medavakkam',
+    'medavakkam junction'
+  ],
+  'thiruvallur': [
+    'thiruvallur',
+    'thiruvallur bus stand'
   ]
 };
 
@@ -580,6 +667,282 @@ export const VERIFIED_MTC_BUS_ROUTES = [
       'St. Thomas Mount',
       'Tambaram',
       'Chengalpattu'
+    ]
+  },
+  {
+    id: 'mtc-570',
+    routeNumber: '570',
+    operator: 'MTC',
+    serviceType: 'Deluxe Express',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    notes: 'CMBT Koyambedu to Kelambakkam / SIPCOT via Guindy, Velachery, OMR',
+    stops: [
+      'Koyambedu',
+      'Vadapalani',
+      'Ashok Nagar',
+      'Guindy',
+      'Velachery',
+      'Perungudi',
+      'Kandanchavadi',
+      'Sholinganallur',
+      'Siruseri',
+      'Kelambakkam'
+    ]
+  },
+  {
+    id: 'mtc-70',
+    routeNumber: '70',
+    operator: 'MTC',
+    serviceType: 'Deluxe',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    notes: 'Avadi to Tambaram via Ambattur, Koyambedu CMBT, Vadapalani, Guindy, Chromepet',
+    stops: [
+      'Avadi',
+      'Ambattur',
+      'Koyambedu',
+      'Vadapalani',
+      'Ashok Nagar',
+      'Guindy',
+      'Chromepet',
+      'Tambaram'
+    ]
+  },
+  {
+    id: 'mtc-51',
+    routeNumber: '51',
+    operator: 'MTC',
+    serviceType: 'Ordinary',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    notes: 'Tambaram to Velachery via Medavakkam',
+    stops: [
+      'Tambaram',
+      'Medavakkam',
+      'Velachery'
+    ]
+  },
+  {
+    id: 'mtc-47A',
+    routeNumber: '47A',
+    operator: 'MTC',
+    serviceType: 'Express',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    notes: 'Besant Nagar to Villivakkam via Adyar, T. Nagar, Kilpauk',
+    stops: [
+      'Besant Nagar',
+      'Adyar',
+      'T. Nagar',
+      'Kilpauk',
+      'ICF'
+    ]
+  },
+  {
+    id: 'mtc-48A',
+    routeNumber: '48A',
+    operator: 'MTC',
+    serviceType: 'Express',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    notes: 'Velachery to Ambattur OT via Guindy, Vadapalani, Koyambedu',
+    stops: [
+      'Velachery',
+      'Guindy',
+      'Vadapalani',
+      'Koyambedu',
+      'Ambattur'
+    ]
+  },
+  {
+    id: 'mtc-7M',
+    routeNumber: '7M',
+    operator: 'MTC',
+    serviceType: 'Ordinary',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    notes: 'T. Nagar to Broadway via Mount Road, LIC, Central',
+    stops: [
+      'T. Nagar',
+      'Saidapet',
+      'LIC',
+      'Chennai Central',
+      'Broadway'
+    ]
+  },
+  {
+    id: 'mtc-11G',
+    routeNumber: '11G',
+    operator: 'MTC',
+    serviceType: 'Ordinary',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'KK Nagar',
+      'Ashok Nagar',
+      'T. Nagar',
+      'LIC',
+      'Broadway'
+    ]
+  },
+  {
+    id: 'mtc-12B',
+    routeNumber: '12B',
+    operator: 'MTC',
+    serviceType: 'Ordinary',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Vadapalani',
+      'T. Nagar',
+      'Mylapore',
+      'Foreshore Estate'
+    ]
+  },
+  {
+    id: 'mtc-27D',
+    routeNumber: '27D',
+    operator: 'MTC',
+    serviceType: 'Ordinary',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Foreshore Estate',
+      'Triplicane',
+      'Egmore',
+      'Kilpauk',
+      'ICF'
+    ]
+  },
+  {
+    id: 'mtc-29C',
+    routeNumber: '29C',
+    operator: 'MTC',
+    serviceType: 'Express',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Perambur',
+      'Egmore',
+      'Mylapore',
+      'Adyar',
+      'Besant Nagar'
+    ]
+  },
+  {
+    id: 'mtc-102',
+    routeNumber: '102',
+    operator: 'MTC',
+    serviceType: 'Express',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Broadway',
+      'Marina Beach',
+      'Adyar',
+      'Perungudi',
+      'Sholinganallur',
+      'Siruseri',
+      'Kelambakkam'
+    ]
+  },
+  {
+    id: 'mtc-114',
+    routeNumber: '114',
+    operator: 'MTC',
+    serviceType: 'Express',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Red Hills',
+      'Anna Nagar',
+      'Koyambedu'
+    ]
+  },
+  {
+    id: 'mtc-153',
+    routeNumber: '153',
+    operator: 'MTC',
+    serviceType: 'Ordinary',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Thiruvallur',
+      'Poonamallee',
+      'Koyambedu'
+    ]
+  },
+  {
+    id: 'mtc-V51',
+    routeNumber: 'V51',
+    operator: 'MTC',
+    serviceType: 'Ordinary',
+    mode: 'bus',
+    source: 'MTC Official (mtcbus.tn.gov.in)',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Tambaram',
+      'Chromepet',
+      'Guindy',
+      'Saidapet',
+      'T. Nagar'
+    ]
+  },
+  {
+    id: 'sr-suburban-west',
+    routeNumber: 'Suburban West',
+    operator: 'Southern Railway',
+    serviceType: 'Commuter Rail',
+    mode: 'train',
+    source: 'Southern Railway Official',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Chennai Central',
+      'Perambur',
+      'Villivakkam',
+      'Ambattur',
+      'Avadi',
+      'Thiruvallur'
+    ]
+  },
+  {
+    id: 'sr-mrts',
+    routeNumber: 'MRTS Light Rail',
+    operator: 'Southern Railway',
+    serviceType: 'Commuter Rail',
+    mode: 'local_train',
+    source: 'Southern Railway Official',
+    lastVerifiedAt: '2026-08-17',
+    stops: [
+      'Chennai Beach',
+      'Fort',
+      'Park Town',
+      'Chepauk',
+      'Triplicane',
+      'Light House',
+      'Thirumayilai',
+      'Mandaveli',
+      'Greenways Road',
+      'Kotturpuram',
+      'Kasturba Nagar',
+      'Indira Nagar',
+      'Taramani',
+      'Perungudi',
+      'Velachery'
     ]
   }
 ];
