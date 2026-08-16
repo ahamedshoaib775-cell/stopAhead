@@ -1,5 +1,22 @@
-// osmService.js - OpenStreetMap (Nominatim + Leaflet + Overpass + OSRM) integration service
-import { calculateHaversineDistance } from './geoHelper';
+/**
+ * Safe fetch wrapper with hard AbortController timeout to guarantee no API call hangs indefinitely
+ */
+export async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
 
 /**
  * Nominatim Free Geocoding Search (OpenStreetMap)
@@ -7,7 +24,7 @@ import { calculateHaversineDistance } from './geoHelper';
  * Biased/restricted to user's current city/area using viewbox + bounded=1
  */
 export async function searchNominatimPlaces(query, locationBias = null) {
-  if (!query || query.trim().length < 2) return [];
+  if (!query || !query.trim()) return [];
 
   try {
     let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1`;
@@ -25,18 +42,19 @@ export async function searchNominatimPlaces(query, locationBias = null) {
       }
     }
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers: {
         'Accept-Language': 'en',
         'User-Agent': 'StopAheadTransitApp/2.0'
       }
-    });
+    }, 3500);
 
     if (!response.ok) {
       throw new Error(`Nominatim error: ${response.statusText}`);
     }
 
     const data = await response.json();
+
 
     return data.map((item) => {
       const mainName = item.name || item.display_name.split(',')[0];
@@ -559,12 +577,13 @@ export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transpo
   console.log(`[StopAhead OSRM Routing URL]: ${url}`);
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url, {}, 3500);
     if (!response.ok) {
       throw new Error(`OSRM HTTP error ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
+
     console.log('[StopAhead OSRM Routing Payload]:', data);
 
     if (data.routes && data.routes.length > 0) {

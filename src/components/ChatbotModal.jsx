@@ -371,6 +371,37 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
                           </button>
                         </div>
                       )}
+
+                      {/* Error / Timeout Retry Card */}
+                      {(cardData.cardType === 'error_timeout' || cardData.isError) && (
+                        <div style={{ marginTop: '0.65rem', padding: '0.85rem 1rem', borderRadius: '14px', background: '#fff1f2', border: '1px solid #fecdd3', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#e11d48', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <Clock size={16} />
+                            <span>Request timed out</span>
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#475569' }}>
+                            This lookup is taking longer than expected. Would you like to try again?
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSend(cardData.rawQuery || msg.text)}
+                            style={{
+                              padding: '0.45rem 0.85rem',
+                              borderRadius: '8px',
+                              background: '#025AED',
+                              color: '#ffffff',
+                              fontWeight: 800,
+                              fontSize: '0.75rem',
+                              border: 'none',
+                              cursor: 'pointer',
+                              alignSelf: 'flex-start'
+                            }}
+                          >
+                            🔄 Retry Request
+                          </button>
+                        </div>
+                      )}
+
                     </>
                   )}
                 </div>
