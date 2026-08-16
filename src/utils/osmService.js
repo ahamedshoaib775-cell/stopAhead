@@ -256,46 +256,6 @@ export async function fetchOverpassNearbyStops(lat, lng, radiusMeters = 2000, tr
     console.warn('[StopAhead Overpass] Overpass query notice:', err.message);
   }
 
-  // 2. High-speed Nominatim fallback (< 800ms) strictly matched by transport mode
-  try {
-    let fallbackQuery = `${transportMode} station`;
-    if (transportMode === 'metro' || transportMode === 'subway') fallbackQuery = 'metro station';
-    else if (transportMode === 'train') fallbackQuery = 'railway station';
-    else if (transportMode === 'local_train') fallbackQuery = 'suburban railway station';
-    else if (transportMode === 'bus') fallbackQuery = 'bus stop';
-
-    const locationBias = { lat, lng, delta: 0.08, bounded: true };
-    const fallbackPlaces = await searchNominatimPlaces(fallbackQuery, locationBias);
-    if (fallbackPlaces && fallbackPlaces.length > 0) {
-      const validStops = fallbackPlaces.filter((p) => {
-        const nameLower = (p.name || '').toLowerCase();
-        const descLower = (p.description || '').toLowerCase();
-        if (transportMode === 'metro') return nameLower.includes('metro') || nameLower.includes('subway') || descLower.includes('metro');
-        if (transportMode === 'bus') return nameLower.includes('bus') || nameLower.includes('stop') || descLower.includes('bus');
-        return true;
-      }).map((p) => {
-        const distKm = parseFloat(calculateHaversineDistance(lat, lng, p.lat, p.lng).toFixed(1));
-        return {
-          id: p.id,
-          name: p.name,
-          description: p.description || `${transportMode.toUpperCase()} Station`,
-          lat: p.lat,
-          lng: p.lng,
-          distKm,
-          transportMode
-        };
-      });
-
-      if (validStops.length > 0) {
-        validStops.sort((a, b) => a.distKm - b.distKm);
-        validStops.radiusUsedKm = Math.round(radiusMeters / 1000);
-        return validStops;
-      }
-    }
-  } catch (err) {
-    console.warn('[StopAhead Overpass] Nominatim fallback failed:', err.message);
-  }
-
   const emptyStops = [];
   emptyStops.radiusUsedKm = Math.round(radiusMeters / 1000);
   return emptyStops;
@@ -312,9 +272,9 @@ export async function fetchMultiModeAvailability(lat, lng, radiusMeters = 3000) 
   if (!lat || !lng) {
     return {
       bus: { available: true, message: '' },
-      train: { available: true, message: '' },
-      metro: { available: true, message: '' },
-      local_train: { available: true, message: '' }
+      train: { available: false, message: 'No train station within 3km' },
+      metro: { available: false, message: 'No Metro station within 3km' },
+      local_train: { available: false, message: 'No local train station within 3km' }
     };
   }
 
@@ -325,9 +285,9 @@ export async function fetchMultiModeAvailability(lat, lng, radiusMeters = 3000) 
 
   const result = {
     bus: { available: true, message: '' },
-    train: { available: true, message: '' },
-    metro: { available: true, message: '' },
-    local_train: { available: true, message: '' }
+    train: { available: false, message: 'No train station within 3km' },
+    metro: { available: false, message: 'No Metro station within 3km' },
+    local_train: { available: false, message: 'No local train station within 3km' }
   };
 
   const overpassBatchQuery = `[out:json][timeout:4];
@@ -360,7 +320,7 @@ out tags 60;`;
       if (!response.ok) continue;
 
       const data = await response.json();
-      if (data.elements && data.elements.length > 0) {
+      if (data.elements) {
         let hasBus = false;
         let hasTrain = false;
         let hasMetro = false;
@@ -374,16 +334,20 @@ out tags 60;`;
           const highway = tags.highway || '';
           const amenity = tags.amenity || '';
           const station = tags.station || '';
+          const subway = tags.subway || '';
 
           if (highway === 'bus_stop' || amenity === 'bus_station') {
             hasBus = true;
           }
-          if (railway === 'subway_entrance' || railway === 'subway' || station === 'subway' || name.includes('metro')) {
+          if (railway === 'subway_entrance' || railway === 'subway' || station === 'subway' || subway === 'yes' || name.includes('metro')) {
             hasMetro = true;
           }
           if (railway === 'station' || railway === 'halt' || railway === 'platform') {
-            hasTrain = true;
-            hasLocalTrain = true;
+            if (tags.suburban === 'yes' || tags.commuter === 'yes') {
+              hasLocalTrain = true;
+            } else {
+              hasTrain = true;
+            }
           }
         }
 
@@ -408,51 +372,7 @@ out tags 60;`;
 /**
  * Query Overpass API for intermediate stations along a Metro / Local Train line between origin and destination coordinates
  */
-export async function fetchMetroLineStops(originLat, originLng, destLat, destLng, transportMode = 'metro') {
-  if (!originLat || !destLat) return [];
-
-  try {
-    let filterTag = '[railway~"station|subway_entrance"]';
-    if (transportMode === 'train') filterTag = '[railway~"station|halt"]';
-
-    const minLat = Math.min(originLat, destLat) - 0.05;
-    const maxLat = Math.max(originLat, destLat) + 0.05;
-    const minLng = Math.min(originLng, destLng) - 0.05;
-    const maxLng = Math.max(originLng, destLng) + 0.05;
-
-    const overpassQuery = `
-      [out:json][timeout:12];
-      (
-        node${filterTag}(${minLat},${minLng},${maxLat},${maxLng});
-      );
-      out body 30;
-    `;
-
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: `data=${encodeURIComponent(overpassQuery)}`,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.elements && data.elements.length > 0) {
-        const stations = data.elements
-          .filter((n) => n.tags && (n.tags.name || n.tags['name:en']))
-          .map((n) => ({
-            id: `metro-line-node-${n.id}`,
-            name: n.tags.name || n.tags['name:en'],
-            lat: n.lat,
-            lng: n.lon
-          }));
-
-        if (stations.length > 0) return stations;
-      }
-    }
-  } catch (err) {
-    console.warn('Overpass metro line query error:', err.message);
-  }
-
+export async function fetchOsmLineStationSequence(origLat, origLng, destLat, destLng, mode = 'metro') {
   return [];
 }
 
@@ -491,21 +411,8 @@ export async function fetchNearestTransitStopToPoint(targetLat, targetLng, trans
       };
     }
 
-    return {
-      nearestStop: {
-        id: `resolved-stop-${targetLat}-${targetLng}`,
-        name: `Nearest ${transportMode.toUpperCase()} Station`,
-        description: `Closest Transit Point`,
-        lat: targetLat,
-        lng: targetLng,
-        distKm: 0.1,
-        transportMode
-      },
-      gapKm: 0.1,
-      walkingMins: 1,
-      isFarGap: false,
-      isVeryFarGap: true
-    };
+    // Return null if no real transit stop exists in OSM for this mode — NEVER fabricate a fake stop!
+    return null;
   } catch (err) {
     return null;
   }

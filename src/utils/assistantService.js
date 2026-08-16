@@ -33,6 +33,34 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
 }
 
 /**
+ * Detect mode-only intent messages (e.g. "I want to go by bus", "by metro", "using train") with NO destination
+ */
+function detectModeOnlyIntent(rawQuery) {
+  const q = rawQuery.toLowerCase().trim();
+
+  const isBusOnly = /^(?:by\s+bus|using\s+bus|take\s+bus|i\s+want\s+to\s+go\s+by\s+bus|bus\s+only|on\s+bus|via\s+bus)$/i.test(q);
+  const isMetroOnly = /^(?:by\s+metro|using\s+metro|take\s+metro|i\s+want\s+to\s+go\s+by\s+metro|metro\s+only|on\s+metro|via\s+metro|by\s+subway)$/i.test(q);
+  const isTrainOnly = /^(?:by\s+train|using\s+train|take\s+train|i\s+want\s+to\s+go\s+by\s+train|train\s+only|on\s+train|via\s+train)$/i.test(q);
+  const isLocalTrainOnly = /^(?:by\s+local\s+train|using\s+local\s+train|take\s+local\s+train|i\s+want\s+to\s+go\s+by\s+local\s+train)$/i.test(q);
+
+  if (isBusOnly) return 'bus';
+  if (isMetroOnly) return 'metro';
+  if (isTrainOnly) return 'train';
+  if (isLocalTrainOnly) return 'local_train';
+
+  const match = q.match(/^(?:i\s+want\s+to\s+go\s+|i\s+want\s+to\s+travel\s+|i\s+need\s+to\s+go\s+|using\s+|take\s+)?by\s+(bus|metro|subway|train|local\s+train)$/i);
+  if (match) {
+    const m = match[1].toLowerCase();
+    if (m === 'subway' || m === 'metro') return 'metro';
+    if (m === 'bus') return 'bus';
+    if (m === 'local train') return 'local_train';
+    if (m === 'train') return 'train';
+  }
+
+  return null;
+}
+
+/**
  * Inner Assistant Execution Logic
  */
 async function executeAssistantLogic(userQuery, appContext, startTime) {
@@ -50,7 +78,20 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
   const userLng = userPosition?.lng || userLocation?.lng || 80.2707;
   const cityName = userLocation?.cityName || '';
 
-  // 1. GREETINGS & INTRO INTENT
+  // 1. MODE-ONLY INTENT DETECTION ("I want to go by bus", "by metro", "using train")
+  const modeOnlyPreference = detectModeOnlyIntent(rawQuery);
+  if (modeOnlyPreference) {
+    const modeLabel = modeOnlyPreference === 'metro' ? 'Metro' : modeOnlyPreference === 'train' ? 'Train' : modeOnlyPreference === 'local_train' ? 'Local Train' : 'Bus';
+    console.log(`[StopAhead AI Lifecycle] Mode-only intent detected: ${modeOnlyPreference}`);
+    return {
+      cardType: 'mode_selected',
+      preferredMode: modeOnlyPreference,
+      modeLabel,
+      responseText: `Got it! I've set your preference to **${modeLabel}**. Where are you headed today?`
+    };
+  }
+
+  // 2. GREETINGS & INTRO INTENT
   if (
     query === 'hi' ||
     query === 'hello' ||
@@ -65,7 +106,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     };
   }
 
-  // 2. "WHERE AM I?" / LOCATION INTENT
+  // 3. "WHERE AM I?" / LOCATION INTENT
   if (query.includes('where am i') || query.includes('my location') || query.includes('current position')) {
     return cityName ? {
       cardType: 'location',
@@ -75,7 +116,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     };
   }
 
-  // 3. MY ACTIVE ALERT / VIEW ALERT INTENT
+  // 4. MY ACTIVE ALERT / VIEW ALERT INTENT
   if (query.includes('my active alert') || query.includes('view alert') || query.includes('current alert') || query.includes('check alert')) {
     if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
       const stopsLeft = activeTrip.stopsRemaining ?? 2;
@@ -93,7 +134,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     };
   }
 
-  // 4. CANCEL STOP ALERT INTENT ("Cancel my alert", "Stop alarm")
+  // 5. CANCEL STOP ALERT INTENT ("Cancel my alert", "Stop alarm")
   if (query.includes('cancel alert') || query.includes('cancel my alert') || query.includes('delete alert') || query.includes('stop alert')) {
     if (activeTrip && activeTrip.status !== 'idle' && activeTrip.destinationStop) {
       const destName = activeTrip.destinationStop.name;
@@ -106,7 +147,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     return { responseText: "No active stop alert to cancel!" };
   }
 
-  // 5. MODIFY STOP ALERT INTENT ("Change alert to 3 stops", "Make alert 4 stops")
+  // 6. MODIFY STOP ALERT INTENT ("Change alert to 3 stops", "Make alert 4 stops")
   if (query.includes('change alert') || query.includes('modify alert') || query.includes('update alert') || query.includes('set alert to')) {
     const matchNumber = query.match(/(\d+)\s*(stop|min|minute)/);
     const newThresh = matchNumber ? parseInt(matchNumber[1], 10) : 3;
@@ -122,7 +163,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     }
   }
 
-  // 6. CREATE STOP ALERT INTENT ("Alert me 2 stops before Marina Beach", "Set alert for Phoenix Mall")
+  // 7. CREATE STOP ALERT INTENT ("Alert me 2 stops before Marina Beach", "Set alert for Phoenix Mall")
   if (query.includes('alert me') || (query.includes('set') && query.includes('alert'))) {
     console.log('[StopAhead AI Lifecycle] 2. Intent: Create Alert');
     const destMatch = extractTargetPlaceName(rawQuery, ['alert me', 'set alert for', 'set an alert for', 'stops before', 'stop before', 'before']);
@@ -150,7 +191,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     }
   }
 
-  // 7. SPECIFIC MODE AVAILABILITY CHECK ("Is there a metro station near me?", "metro near me")
+  // 8. SPECIFIC MODE AVAILABILITY CHECK ("Is there a metro station near me?", "metro near me")
   if (query.includes('metro') && (query.includes('near') || query.includes('available') || query.includes('exist') || query.includes('station'))) {
     console.log('[StopAhead AI Lifecycle] 2. Intent: Mode Availability');
     const statusMap = await fetchMultiModeAvailability(userLat, userLng, 3000).catch(() => ({}));
@@ -173,7 +214,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     }
   }
 
-  // 8. MULTI-MODAL TRIP PLANNING / DESTINATION SEARCH INTENT (e.g. "I want to go to Saidapet", "Saidapet Bus Stand")
+  // 9. MULTI-MODAL TRIP PLANNING / DESTINATION SEARCH INTENT (e.g. "I want to go to Saidapet", "Saidapet Bus Stand")
   console.log('[StopAhead AI Lifecycle] 2. Intent: Destination Search & Route Planning');
   const destQuery = extractTargetPlaceName(rawQuery);
   console.log('[StopAhead AI Lifecycle] 3. Extracted target place:', destQuery);
@@ -185,7 +226,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     }
   }
 
-  // 9. NEARBY STOPS QUERY ("nearest bus stop", "closest train station")
+  // 10. NEARBY STOPS QUERY ("nearest bus stop", "closest train station")
   if (query.includes('nearest') || query.includes('closest') || query.includes('nearby')) {
     console.log('[StopAhead AI Lifecycle] 2. Intent: Nearby Stops Query');
     let mode = transportMode;
@@ -205,14 +246,14 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
     }
   }
 
-  // 10. HONEST EMPTY STATE FALLBACK (Only if truly nothing found)
+  // 11. HONEST EMPTY STATE FALLBACK (Only if truly nothing found)
   return {
     responseText: `Couldn't find '${rawQuery}' or nearby matches. Try searching by a specific landmark or station name (e.g. Phoenix Mall, Marina Beach, or T Nagar).`
   };
 }
 
 /**
- * Multi-Modal "Best Way There" calculation Engine with strict per-mode error safety
+ * Multi-Modal "Best Way There" calculation Engine with strict mode availability & real station validation
  */
 async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQuery = '') {
   try {
@@ -224,13 +265,22 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
     if (!places || places.length === 0) return null;
 
     const targetPlace = places[0];
-    const availability = await fetchMultiModeAvailability(userLat, userLng, 3000).catch(() => ({}));
+    const availability = await fetchMultiModeAvailability(userLat, userLng, 3000).catch(() => ({
+      bus: { available: true },
+      metro: { available: false },
+      train: { available: false },
+      local_train: { available: false }
+    }));
 
     const candidateModes = ['bus', 'metro', 'train', 'local_train'];
 
     const modePromises = candidateModes.map(async (mode) => {
       try {
-        if (availability[mode]?.available === false && mode !== 'bus') return null;
+        // STRICT AVAILABILITY CHECK: if mode is not available near user, exclude immediately!
+        if (availability[mode]?.available === false) {
+          console.log(`[StopAhead MultiModal] Skipping ${mode}: Not available near user location.`);
+          return null;
+        }
 
         const [origRes, destRes, osmRouteRelations] = await Promise.all([
           fetchNearestTransitStopToPoint(userLat, userLng, mode).catch(() => null),
@@ -238,8 +288,12 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
           fetchOsmRouteRelationsBetweenPoints(userLat, userLng, targetPlace.lat, targetPlace.lng, mode, cityName, targetPlace.name).catch(() => [])
         ]);
 
+        // STRICT REAL STATION VALIDATION: Must have genuine stops at both origin and destination!
         if (!origRes?.nearestStop || !destRes?.nearestStop) return null;
-        if (origRes.gapKm > 6 || destRes.gapKm > 6) return null;
+        if (!origRes.nearestStop.id || !destRes.nearestStop.id) return null;
+        if (origRes.nearestStop.id.startsWith('resolved-stop-') || destRes.nearestStop.id.startsWith('resolved-stop-')) return null;
+
+        if (origRes.gapKm > 4.5 || destRes.gapKm > 4.5) return null;
 
         const routeData = await fetchOSRMRoute(origRes.nearestStop.lat, origRes.nearestStop.lng, destRes.nearestStop.lat, destRes.nearestStop.lng, mode).catch(() => null);
 
