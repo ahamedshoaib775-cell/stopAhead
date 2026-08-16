@@ -736,3 +736,85 @@ function findTransferBusRoutes(orig, dest, mode = 'bus') {
 
   return transfers;
 }
+
+/**
+ * Find ALL routes serving destination:
+ * 1. Direct reachable routes (where origin exists BEFORE destination on the route)
+ * 2. Destination-only routes (routes that serve destination but do NOT have a reachable stop near origin)
+ */
+export function findAllRoutesServingDestination({ origin, destination, mode = null }) {
+  if (!destination) {
+    return { directRoutes: [], indirectRoutes: [], destinationRoutes: [] };
+  }
+
+  const canonOrigin = origin ? getCanonicalStopName(origin) : '';
+  const canonDest = getCanonicalStopName(destination);
+
+  const cleanOrig = canonOrigin.toLowerCase();
+  const cleanDest = canonDest.toLowerCase();
+
+  const directRoutes = [];
+  const destinationRoutes = [];
+
+  for (const route of VERIFIED_MTC_BUS_ROUTES) {
+    if (mode && route.mode !== mode && !(mode === 'bus' && route.mode === 'bus')) {
+      continue;
+    }
+
+    const stopsLower = route.stops.map((s) => s.toLowerCase());
+
+    const origIdx = cleanOrig ? stopsLower.findIndex((s) => s === cleanOrig || s.includes(cleanOrig) || cleanOrig.includes(s)) : -1;
+    const destIdx = stopsLower.findIndex((s) => s === cleanDest || s.includes(cleanDest) || cleanDest.includes(s));
+
+    if (destIdx === -1) continue;
+
+    const routeObj = {
+      id: route.id,
+      routeNumber: route.routeNumber,
+      serviceType: route.serviceType,
+      operator: route.operator,
+      mode: route.mode,
+      origin: route.stops[0],
+      destination: route.stops[route.stops.length - 1],
+      targetStop: route.stops[destIdx],
+      stops: route.stops,
+      source: route.source || 'MTC Verified Reference',
+      sourceType: route.sourceType || 'verified_reference',
+      lastVerifiedAt: route.lastVerifiedAt || '2026-08-17',
+      notes: route.notes || null
+    };
+
+    if (origIdx !== -1 && destIdx > origIdx) {
+      const intermediateStops = route.stops.slice(origIdx + 1, destIdx);
+      directRoutes.push({
+        ...routeObj,
+        isDirect: true,
+        originStopName: route.stops[origIdx],
+        destinationStopName: route.stops[destIdx],
+        originIndex: origIdx,
+        destinationIndex: destIdx,
+        stopCount: destIdx - origIdx,
+        intermediateStops,
+        direction: `${route.stops[origIdx]} → ${route.stops[destIdx]}`
+      });
+    } else {
+      destinationRoutes.push({
+        ...routeObj,
+        isDirect: false,
+        direction: `${route.stops[0]} → ${route.stops[route.stops.length - 1]}`,
+        isReachableFromOrigin: false,
+        caveat: 'Not directly reachable from your current location — requires transfer or walk to a different boarding point'
+      });
+    }
+  }
+
+  directRoutes.sort((a, b) => a.stopCount - b.stopCount);
+
+  return {
+    canonOrigin,
+    canonDest,
+    directRoutes,
+    destinationRoutes
+  };
+}
+

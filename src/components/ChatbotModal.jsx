@@ -11,6 +11,8 @@ import AlertCard from './chatbot/AlertCard';
 import UnavailableModeCard from './chatbot/UnavailableModeCard';
 import StopCard from './chatbot/StopCard';
 import JourneyCard from './chatbot/JourneyCard';
+import AllRoutesCard from './chatbot/AllRoutesCard';
+
 
 export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStartTrip, onNavigate, user }) {
   const userId = user?.id || null;
@@ -645,8 +647,19 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
 
                   {cardData && (
                     <>
+                      {/* All Routes Multi-Route List Card */}
+
+                      {cardData.cardType === 'all_routes' && (
+                        <AllRoutesCard
+                          data={cardData}
+                          onStartTrip={onStartTrip}
+                          onNavigate={onNavigate}
+                          onClose={onClose}
+                        />
+                      )}
+
                       {/* Best Way There Card */}
-                      {(cardData.cardType === 'best_way_there' || cardData.isTripRecommendation) && (
+                      {cardData.cardType === 'best_way_there' && (
                         <BestWayThereCard
                           data={cardData}
                           onStartTrip={onStartTrip}
@@ -654,6 +667,7 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
                           onClose={onClose}
                         />
                       )}
+
 
                       {/* Alert Status Card */}
                       {cardData.cardType === 'alert' && (

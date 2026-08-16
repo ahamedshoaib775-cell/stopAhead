@@ -1,6 +1,8 @@
 // assistantService.js - StopAhead AI Intelligent Multi-Modal Travel Assistant Engine
 import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints } from './osmService';
 import { calculateHaversineDistance } from './geoHelper';
+import { findAllRoutesServingDestination } from '../data/verifiedBusRoutes';
+
 
 /**
  * Normalize location string for fuzzy matching
@@ -436,55 +438,36 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
       }
     });
 
-    const results = await Promise.all(modePromises);
-    const validOptions = results.filter(Boolean).sort((a, b) => a.totalMins - b.totalMins);
+    // Query all routes serving destination from verified route engine
+    const allServing = findAllRoutesServingDestination({ origin: cityName, destination: targetPlace.name || destQuery });
 
-    if (validOptions.length > 0) {
+    if (validOptions.length > 0 || (allServing && (allServing.directRoutes.length > 0 || allServing.destinationRoutes.length > 0))) {
       const bestOption = validOptions[0];
-      let routeText = '';
-      if (searchResult.isBroadened) {
-        routeText = `No exact match for '${rawQuery || destQuery}' — showing results near **${bestOption.targetPlaceName}** instead.\n\n`;
-      }
+      const targetName = targetPlace.name || destQuery;
 
-      if (bestOption.matchedRouteRef) {
-        routeText += `Take **${bestOption.modeLabel} ${bestOption.matchedRouteRef}** (${bestOption.matchedRouteName || 'Direct Route'})`;
-      } else {
-        routeText += `Fastest option: **${bestOption.modeLabel}**`;
-      }
-      routeText += ` from **${bestOption.originStop.name}** to **${bestOption.destinationStop.name}**.`;
+      let summaryText = `📍 Found **${allServing.directRoutes.length} direct reachable route${allServing.directRoutes.length === 1 ? '' : 's'}** to **${targetName}** from **${cityName || 'your location'}**.`;
 
-      if (bestOption.intermediateStops && bestOption.intermediateStops.length > 0) {
-        const viaSummary = bestOption.intermediateStops.slice(0, 4).join(' • ');
-        routeText += `\n\nVia: **${viaSummary}**`;
-      }
-
-      if (bestOption.sourceType === 'verified_reference') {
-        routeText += `\n\n📌 **Route ${bestOption.matchedRouteRef || ''} — ${bestOption.originStop.name} to ${bestOption.destinationStop.name} (verified reference data, last updated ${bestOption.lastVerifiedAt})**`;
-      } else if (bestOption.source) {
-        routeText += `\n\n✓ **Source: ${bestOption.source} (Live Data)**`;
+      if (allServing.destinationRoutes && allServing.destinationRoutes.length > 0) {
+        summaryText += ` Plus ${allServing.destinationRoutes.length} other route${allServing.destinationRoutes.length === 1 ? '' : 's'} serving ${targetName}.`;
       }
 
       return {
-        cardType: 'best_way_there',
+        cardType: 'all_routes',
         isTripRecommendation: true,
-        recommendedMode: bestOption.mode,
-        recommendedModeLabel: bestOption.modeLabel,
-        targetPlaceName: bestOption.targetPlaceName,
-        originStop: bestOption.originStop,
-        destinationStop: bestOption.destinationStop,
-        stopsCount: bestOption.stopsCount,
-        transitMins: bestOption.transitMins,
-        walkMins: bestOption.walkMins,
-        totalMins: bestOption.totalMins,
-        matchedRouteRef: bestOption.matchedRouteRef,
-        matchedRouteName: bestOption.matchedRouteName,
-        source: bestOption.source,
-        sourceType: bestOption.sourceType,
-        lastVerifiedAt: bestOption.lastVerifiedAt,
-        notes: bestOption.notes,
-        responseText: routeText
+        recommendedMode: bestOption?.mode || 'bus',
+        recommendedModeLabel: bestOption?.modeLabel || 'Bus',
+        targetPlaceName: targetName,
+        canonOrigin: cityName,
+        canonDest: targetName,
+        originStop: bestOption?.originStop || { name: cityName },
+        destinationStop: bestOption?.destinationStop || { name: targetName },
+        directRoutes: allServing.directRoutes,
+        destinationRoutes: allServing.destinationRoutes,
+        bestOption,
+        responseText: summaryText
       };
     }
+
 
 
 
