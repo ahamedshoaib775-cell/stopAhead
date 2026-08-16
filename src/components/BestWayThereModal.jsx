@@ -1,21 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Sparkles, Clock, ArrowRight, MapPin, Footprints, Check, Loader2, X, AlertTriangle, Tag } from 'lucide-react';
-import { searchNominatimPlaces, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
+import { Search, Sparkles, Clock, ArrowRight, MapPin, Footprints, Check, Loader2, X, AlertTriangle, Tag, AlertCircle } from 'lucide-react';
+import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
 import { TRANSIT_MODES, getTransitModeInfo } from './TransitModeSelector';
 
 export default function BestWayThereModal({ userLocation, onStartTrip, onClose }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [broadenedNote, setBroadenedNote] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState(null);
 
   const [isCalculating, setIsCalculating] = useState(false);
   const [viableRoutes, setViableRoutes] = useState([]);
 
-  // Live Nominatim search with location bias
+  // Live Nominatim search with location bias & broadened search fallback
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setSearchResults([]);
+      setBroadenedNote(null);
       return;
     }
 
@@ -29,8 +31,9 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
           bounded: true
         } : null;
 
-        const results = await searchNominatimPlaces(searchQuery, locationBias);
-        setSearchResults(results);
+        const res = await searchNominatimWithBroadenedFallback(searchQuery, locationBias);
+        setSearchResults(res.places || []);
+        setBroadenedNote(res.isBroadened ? res.note : null);
       } catch (e) {
         console.warn('BestWayThere search error:', e);
       } finally {
@@ -40,6 +43,7 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
 
     return () => clearTimeout(timer);
   }, [searchQuery, userLocation]);
+
 
   // Calculate door-to-door transit times across all 4 modes in parallel with OSM Route Relations lookup
   const handleSelectPlace = async (place) => {
@@ -207,6 +211,26 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
           )}
         </div>
 
+        {/* Broadened Search Note Banner */}
+        {broadenedNote && searchResults.length > 0 && !selectedPlace && (
+          <div style={{ padding: '0.45rem 0.75rem', borderRadius: '10px', background: 'rgba(255, 191, 0, 0.1)', border: '1px solid rgba(255, 191, 0, 0.25)', fontSize: '0.78rem', color: '#fbbf24', fontWeight: 600 }}>
+            ℹ️ {broadenedNote}
+          </div>
+        )}
+
+        {/* Honest Empty State */}
+        {searchQuery.trim().length >= 2 && !isSearching && searchResults.length === 0 && !selectedPlace && (
+          <div style={{ padding: '1rem', borderRadius: '14px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', textAlign: 'center' }}>
+            <AlertCircle size={20} color="var(--accent)" style={{ marginBottom: '0.3rem' }} />
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Couldn't find '{searchQuery}' or nearby matches
+            </div>
+            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Try searching by a specific landmark or station name (e.g. Phoenix Mall, Marina Beach, or T Nagar).
+            </div>
+          </div>
+        )}
+
         {/* Search Results Dropdown */}
         {searchResults.length > 0 && !selectedPlace && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '200px', overflowY: 'auto' }}>
@@ -229,6 +253,7 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
             ))}
           </div>
         )}
+
 
         {/* Loading Spinner during multi-mode comparison */}
         {isCalculating && (

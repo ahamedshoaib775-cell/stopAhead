@@ -61,6 +61,50 @@ export async function searchNominatimPlaces(query, locationBias = null) {
 }
 
 /**
+ * Search Nominatim with raw query first; if 0 results, retry with broadened query (stripping generic station/bus stop suffixes).
+ * Returns { places, isBroadened, broadenedQuery, note }
+ */
+export async function searchNominatimWithBroadenedFallback(query, locationBias = null) {
+  if (!query || !query.trim()) return { places: [], isBroadened: false };
+
+  const rawQuery = query.trim();
+
+  // 1. Direct search with exact raw query
+  let places = await searchNominatimPlaces(rawQuery, locationBias);
+  if (places && places.length > 0) {
+    return { places, isBroadened: false, query: rawQuery };
+  }
+
+  // 2. Broadened search retry: strip generic transit suffixes ("Bus Stand", "Bus Stop", "Station", etc.)
+  const genericSuffixRegex = /\s+\b(bus stand|bus stop|bus station|metro station|railway station|subway station|terminus|stop|station)\b$/i;
+  if (genericSuffixRegex.test(rawQuery)) {
+    const broadenedQuery = rawQuery.replace(genericSuffixRegex, '').trim();
+    if (broadenedQuery && broadenedQuery.length >= 2) {
+      const broadenedPlaces = await searchNominatimPlaces(broadenedQuery, locationBias);
+      if (broadenedPlaces && broadenedPlaces.length > 0) {
+        return {
+          places: broadenedPlaces,
+          isBroadened: true,
+          broadenedQuery,
+          note: `No exact match for '${rawQuery}' — showing results near ${broadenedQuery} instead`
+        };
+      }
+    }
+  }
+
+  // 3. Fallback: try raw query without location bias (if location bias was active)
+  if (locationBias) {
+    const globalPlaces = await searchNominatimPlaces(rawQuery, null);
+    if (globalPlaces && globalPlaces.length > 0) {
+      return { places: globalPlaces, isBroadened: false, query: rawQuery };
+    }
+  }
+
+  return { places: [], isBroadened: false, query: rawQuery };
+}
+
+
+/**
  * Helper to dispatch a single Overpass API query with expanded tag filters strictly per transport mode
  */
 async function executeOverpassQuery(lat, lng, radiusMeters, transportMode) {

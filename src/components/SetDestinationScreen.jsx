@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, AlertTriangle, Bookmark, Tag } from 'lucide-react';
-import { searchNominatimPlaces, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
+import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
 import { requestBrowserLocation } from '../utils/locationService';
 import LeafletMap from './LeafletMap';
 import LocationPermissionModal from './LocationPermissionModal';
 import CityOverrideModal from './CityOverrideModal';
 import LocationIndicatorChip from './LocationIndicatorChip';
 import TransitModeSelector, { getTransitModeInfo } from './TransitModeSelector';
+
 
 
 
@@ -25,10 +26,12 @@ export default function SetDestinationScreen({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [osmSearchResults, setOsmSearchResults] = useState([]);
+  const [broadenedSearchNote, setBroadenedSearchNote] = useState(null);
   const [nearbyStops, setNearbyStops] = useState([]);
   const [isLoadingNearby, setIsLoadingNearby] = useState(false);
   const [searchedRadiusKm, setSearchedRadiusKm] = useState(2);
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
+
 
   const [selectedOriginStop, setSelectedOriginStop] = useState(null);
   const [selectedDestinationStop, setSelectedDestinationStop] = useState(null);
@@ -153,6 +156,7 @@ export default function SetDestinationScreen({
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setOsmSearchResults([]);
+      setBroadenedSearchNote(null);
       return;
     }
 
@@ -163,11 +167,12 @@ export default function SetDestinationScreen({
           lat: userLocation.lat,
           lng: userLocation.lng,
           delta: 0.15, // ~15 km bounding box around user city
-          bounded: true // HARD FILTER: strictly exclude results from other cities
+          bounded: true
         } : null;
 
-        const places = await searchNominatimPlaces(searchQuery, locationBias);
-        setOsmSearchResults(places);
+        const res = await searchNominatimWithBroadenedFallback(searchQuery, locationBias);
+        setOsmSearchResults(res.places || []);
+        setBroadenedSearchNote(res.isBroadened ? res.note : null);
       } catch (e) {
         console.warn('Nominatim search failed:', e);
       } finally {
@@ -177,6 +182,7 @@ export default function SetDestinationScreen({
 
     return () => clearTimeout(timer);
   }, [searchQuery, userLocation]);
+
 
   // Handle Location Permission Granting
   const handleGrantLocation = async () => {
@@ -409,11 +415,30 @@ export default function SetDestinationScreen({
         </div>
 
         {/* Live Search Results */}
+        {broadenedSearchNote && osmSearchResults.length > 0 && (
+          <div style={{ marginTop: '0.4rem', padding: '0.45rem 0.75rem', borderRadius: '10px', background: 'rgba(255, 191, 0, 0.1)', border: '1px solid rgba(255, 191, 0, 0.25)', fontSize: '0.78rem', color: '#fbbf24', fontWeight: 600 }}>
+            ℹ️ {broadenedSearchNote}
+          </div>
+        )}
+
+        {searchQuery.trim().length >= 2 && !isSearchingOsm && osmSearchResults.length === 0 && (
+          <div style={{ marginTop: '0.5rem', padding: '1rem', borderRadius: '14px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+            <AlertCircle size={20} color="var(--accent)" style={{ marginBottom: '0.3rem' }} />
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Couldn't find '{searchQuery}' or nearby matches
+            </div>
+            <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+              Try searching by a specific landmark or station name (e.g. Phoenix Mall, Marina Beach, or T Nagar).
+            </div>
+          </div>
+        )}
+
         {osmSearchResults.length > 0 && (
           <div style={{ marginTop: '0.5rem' }}>
             <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, marginBottom: '0.5rem' }}>
               SEARCH RESULTS {userLocation?.cityName ? `(NEAR ${userLocation.cityName.toUpperCase()})` : ''}
             </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
               {osmSearchResults.map((place) => {
                 const isSelected = selectedDestinationStop?.id === place.id;

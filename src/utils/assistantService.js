@@ -1,5 +1,5 @@
 // assistantService.js - StopAhead AI Intelligent Multi-Modal Travel Assistant Engine
-import { searchNominatimPlaces, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints } from './osmService';
+import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints } from './osmService';
 import { calculateHaversineDistance } from './geoHelper';
 
 /**
@@ -118,10 +118,10 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
 
     if (destMatch && userLat && userLng) {
       const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
-      const places = await searchNominatimPlaces(destMatch, locationBias);
+      const searchRes = await searchNominatimWithBroadenedFallback(destMatch, locationBias);
 
-      if (places && places.length > 0) {
-        const place = places[0];
+      if (searchRes.places && searchRes.places.length > 0) {
+        const place = searchRes.places[0];
         const modeUsed = transportMode || 'bus';
         const stopRes = await fetchNearestTransitStopToPoint(place.lat, place.lng, modeUsed);
         const destStop = stopRes?.nearestStop || place;
@@ -163,9 +163,9 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
     }
   }
 
-  // 8. MULTI-MODAL TRIP PLANNING / DESTINATION SEARCH INTENT (e.g. "I want to go to Saidapet", "Saidapet", "Phoenix Mall")
+  // 8. MULTI-MODAL TRIP PLANNING / DESTINATION SEARCH INTENT (e.g. "I want to go to Saidapet", "Saidapet Bus Stand")
   const destQuery = extractTargetPlaceName(rawQuery);
-  console.log('[StopAhead AI Chatbot] Cleaned destination query:', destQuery);
+  console.log('[StopAhead AI Chatbot] Target place extracted:', destQuery);
 
   if (destQuery && userLat && userLng) {
     const multiRouteData = await planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQuery);
@@ -196,11 +196,11 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
     }
   }
 
-  // 10. CLARIFYING QUESTION FALLBACK (Never repeat static welcome screen on real message failure!)
+  // 10. HONEST EMPTY STATE FALLBACK (Only if truly nothing found)
   const fallbackResponse = {
-    responseText: `I couldn't find a direct transit stop for "${rawQuery}". Did you mean you want directions to **${destQuery || rawQuery}**? Try typing a specific landmark or station name (e.g. 'Saidapet Bus Stand', 'Phoenix Mall', or 'Marina Beach').`
+    responseText: `Couldn't find '${rawQuery}' or nearby matches. Try searching by a specific landmark or station name (e.g. Phoenix Mall, Marina Beach, or T Nagar).`
   };
-  console.log('[StopAhead AI Chatbot] Response (Clarifying Fallback):', fallbackResponse);
+  console.log('[StopAhead AI Chatbot] Response (Honest Empty State):', fallbackResponse);
   return fallbackResponse;
 }
 
@@ -211,11 +211,9 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
   try {
     const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
 
-    // Try location-biased search first; fallback to raw query search if 0 results
-    let places = await searchNominatimPlaces(destQuery, locationBias);
-    if (!places || places.length === 0) {
-      places = await searchNominatimPlaces(rawQuery || destQuery);
-    }
+    // Search exact raw query first, retry with broadened search if 0 results
+    const searchResult = await searchNominatimWithBroadenedFallback(destQuery || rawQuery, locationBias);
+    const places = searchResult.places;
     if (!places || places.length === 0) return null;
 
     const targetPlace = places[0];
@@ -225,7 +223,6 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
     let bestOption = null;
 
     for (const mode of candidateModes) {
-      // Skip modes that are strictly unavailable near user
       if (availability[mode]?.available === false && mode !== 'bus') continue;
 
       const [origRes, destRes, osmRouteRelations] = await Promise.all([
@@ -270,9 +267,15 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
     }
 
     if (bestOption) {
-      let routeText = `Fastest option: **${bestOption.modeLabel}**`;
+      let routeText = '';
+      if (searchResult.isBroadened) {
+        routeText = `No exact match for '${rawQuery || destQuery}' — showing results near **${bestOption.targetPlaceName}** instead.\n\n`;
+      }
+
       if (bestOption.matchedRouteRef) {
-        routeText = `Take **${bestOption.modeLabel} ${bestOption.matchedRouteRef}** (${bestOption.matchedRouteName || 'Direct Route'})`;
+        routeText += `Take **${bestOption.modeLabel} ${bestOption.matchedRouteRef}** (${bestOption.matchedRouteName || 'Direct Route'})`;
+      } else {
+        routeText += `Fastest option: **${bestOption.modeLabel}**`;
       }
       routeText += ` from **${bestOption.originStop.name}** to **${bestOption.destinationStop.name}** — ${bestOption.totalMins} min total door-to-door.`;
 
@@ -301,45 +304,43 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
 }
 
 /**
- * Robust target place extractor that strips natural language routing prefixes
+ * Clean natural language routing prefixes anchored to start of string (^...)
+ * Prevents mangling or stripping characters inside place names
  */
 function extractTargetPlaceName(fullQuery, phrasesToStrip = []) {
   if (!fullQuery) return '';
-  let cleaned = fullQuery.toLowerCase().trim();
+  let cleaned = fullQuery.trim();
 
-  const defaultPhrases = [
-    'i want to go to',
-    'i need to go to',
-    'i am going to',
-    'im going to',
-    'i want to reach',
-    'how do i get to',
-    'how to get to',
-    'how to reach',
-    'best way to get to',
-    'best way there to',
-    'best way to',
-    'can you take me to',
-    'take me to',
-    'directions to',
-    'route to',
-    'navigate to',
-    'way to',
-    'path to',
-    'travel to',
-    'head to',
-    'go to'
+  const leadingPrefixes = [
+    /^i\s+want\s+to\s+go\s+to\s+/i,
+    /^i\s+need\s+to\s+go\s+to\s+/i,
+    /^i'm\s+going\s+to\s+/i,
+    /^im\s+going\s+to\s+/i,
+    /^i\s+want\s+to\s+reach\s+/i,
+    /^how\s+do\s+i\s+get\s+to\s+/i,
+    /^how\s+to\s+get\s+to\s+/i,
+    /^how\s+to\s+reach\s+/i,
+    /^best\s+way\s+to\s+get\s+to\s+/i,
+    /^best\s+way\s+there\s+to\s+/i,
+    /^best\s+way\s+to\s+/i,
+    /^can\s+you\s+take\s+me\s+to\s+/i,
+    /^take\s+me\s+to\s+/i,
+    /^directions\s+to\s+/i,
+    /^route\s+to\s+/i,
+    /^navigate\s+to\s+/i,
+    /^way\s+to\s+/i,
+    /^path\s+to\s+/i,
+    /^travel\s+to\s+/i,
+    /^head\s+to\s+/i,
+    /^go\s+to\s+/i
   ];
 
-  const allPhrases = [...phrasesToStrip, ...defaultPhrases];
-  allPhrases.forEach((phrase) => {
-    cleaned = cleaned.replace(phrase, ' ');
-  });
-
-  cleaned = cleaned
-    .replace(/^(i|im|i'm|me|to|the|a|an|from|my|location)\s+/gi, '')
-    .replace(/from my location|from me|my location|the|is|a|an|\?/gi, '')
-    .trim();
+  for (const prefix of leadingPrefixes) {
+    if (prefix.test(cleaned)) {
+      cleaned = cleaned.replace(prefix, '').trim();
+      break;
+    }
+  }
 
   return cleaned || fullQuery.trim();
 }
