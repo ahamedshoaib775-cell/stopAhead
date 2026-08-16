@@ -1,0 +1,68 @@
+// metroDataset.js - Sourced from official CMRL Metro dataset (2 Metro lines, 44 stations)
+export const METRO_CSV_ROUTES = [
+  {
+    "id": "cmrl-blue-line",
+    "routeNumber": "Blue Line (Line 1)",
+    "operator": "CMRL",
+    "serviceType": "Metro Subway",
+    "mode": "metro",
+    "source": "CMRL Official (chennai_metro_stations.csv)",
+    "lastVerifiedAt": "2026-08-17",
+    "stops": [
+      "Wimco Nagar Depot Metro",
+      "Wimco Nagar Metro",
+      "Thiruvotriyur Metro",
+      "Thiruvottriyur Theradi Metro",
+      "Kaladipet Metro",
+      "Tollgate Metro",
+      "New Washermenpet Metro",
+      "Tondiarpet Metro",
+      "Sir Thiyagaraya College Metro",
+      "Washermenpet Metro",
+      "Mannadi",
+      "Highcourt",
+      "Puratchi Thalaivar Dr. M.G.Ramachandran Central Metro",
+      "Government Estate",
+      "LIC",
+      "Thousand Lights",
+      "AG - DMS",
+      "Teynampet",
+      "Nandanam",
+      "Saidapet Metro",
+      "Little Mount",
+      "Guindy",
+      "Arignar Anna Alandur Metro",
+      "OTA-Nanganallur Road",
+      "Meenambakkam",
+      "Chennai International Airport"
+    ]
+  },
+  {
+    "id": "cmrl-green-line",
+    "routeNumber": "Green Line (Line 2)",
+    "operator": "CMRL",
+    "serviceType": "Metro Subway",
+    "mode": "metro",
+    "source": "CMRL Official (chennai_metro_stations.csv)",
+    "lastVerifiedAt": "2026-08-17",
+    "stops": [
+      "Puratchi Thalaivar Dr. M.G.Ramachandran Central Metro",
+      "Egmore Metro",
+      "Nehru Park",
+      "Kilpauk",
+      "Pachaiyappa's College",
+      "Shenoy Nagar",
+      "Anna Nagar East",
+      "Anna Nagar Tower",
+      "Thirumangalam",
+      "Koyambedu",
+      "Puratchi Thalaivi Dr.J.Jayalalithaa CMBT Metro",
+      "Arumbakkam",
+      "Vadapalani",
+      "Ashok Nagar",
+      "Ekkattuthangal",
+      "Arignar Anna Alandur Metro",
+      "St. Thomas Mount Metro"
+    ]
+  }
+];

@@ -1,6 +1,7 @@
 // verifiedBusRoutes.js - Verified MTC Chennai & Metropolitan Transit Route Engine
 // Source of truth for bus numbers, ordered stop sequences, direction validation, and canonical stop resolution.
 import { MTC_CSV_BUS_ROUTES } from './mtcDataset.js';
+import { METRO_CSV_ROUTES } from './metroDataset.js';
 
 /**
  * Canonical Stop Alias Dictionary
@@ -948,7 +949,7 @@ export const VERIFIED_MTC_BUS_ROUTES = [
   }
 ];
 
-export const ALL_MTC_ROUTES = [...VERIFIED_MTC_BUS_ROUTES, ...(MTC_CSV_BUS_ROUTES || [])];
+export const ALL_MTC_ROUTES = [...VERIFIED_MTC_BUS_ROUTES, ...(MTC_CSV_BUS_ROUTES || []), ...(METRO_CSV_ROUTES || [])];
 
 /**
  * Strict Route Verification Function (`findVerifiedBusRoutes`)
