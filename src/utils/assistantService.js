@@ -3,6 +3,87 @@ import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNeare
 import { calculateHaversineDistance } from './geoHelper';
 
 /**
+ * Normalize location string for fuzzy matching
+ */
+export function normalizeLocation(value) {
+  if (!value) return '';
+  return value.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Structured intent detection engine using AI-driven pattern matching and entity extraction
+ */
+export function detectTransportIntent(userQuery, conversationContext = {}) {
+  if (!userQuery || !userQuery.trim()) {
+    return { intent: 'GREETING', destination: null, origin: null, mode: null, alertBeforeStops: null };
+  }
+
+  const raw = userQuery.trim();
+  const q = raw.toLowerCase();
+
+  // Extract alert stops count if present ("2 stops before", "alert me 3 stops")
+  const stopMatch = q.match(/(\d+)\s*(?:stop|min|minute)s?/);
+  const alertBeforeStops = stopMatch ? parseInt(stopMatch[1], 10) : (conversationContext.alertBeforeStops || 2);
+
+  // Extract mode if explicitly mentioned
+  let mode = conversationContext.mode || null;
+  if (/\b(?:metro|subway)\b/i.test(q)) mode = 'metro';
+  else if (/\blocal\s+train\b/i.test(q)) mode = 'local_train';
+  else if (/\btrain\b/i.test(q)) mode = 'train';
+  else if (/\bbus\b/i.test(q)) mode = 'bus';
+
+  // 1. MODE_ONLY INTENT ("I want to go by bus", "by metro", "using train")
+  const isModeOnly = /^(?:i\s+want\s+to\s+go\s+|i\s+want\s+to\s+travel\s+|i\s+need\s+to\s+go\s+|using\s+|take\s+)?by\s+(bus|metro|subway|train|local\s+train)$/i.test(q)
+    || /^(?:by\s+bus|using\s+bus|take\s+bus|bus\s+only|by\s+metro|using\s+metro|take\s+metro|metro\s+only|by\s+train|using\s+train|take\s+train|train\s+only)$/i.test(q);
+
+  if (isModeOnly && mode) {
+    return { intent: 'MODE_ONLY', destination: null, origin: null, mode, alertBeforeStops: null };
+  }
+
+  // 2. CANCEL_ALERT INTENT ("Cancel my alert", "Stop alarm", "Delete alert")
+  if (/\b(?:cancel|stop|delete|remove)\s+(?:my\s+)?(?:alert|alarm)\b/i.test(q)) {
+    return { intent: 'CANCEL_ALERT', destination: conversationContext.destination || null, origin: null, mode, alertBeforeStops: null };
+  }
+
+  // 3. UPDATE_ALERT INTENT ("Change alert to 3 stops", "Update alert to 4 stops")
+  if (/\b(?:change|modify|update)\s+(?:my\s+)?(?:alert|alarm)\b/i.test(q) || /\bset\s+alert\s+to\b/i.test(q)) {
+    return { intent: 'UPDATE_ALERT', destination: conversationContext.destination || null, origin: null, mode, alertBeforeStops };
+  }
+
+  // 4. ACTIVE_JOURNEY / REMAINING_STOPS INTENT ("How many stops left?", "where am i", "my current trip")
+  if (/\b(?:how\s+many\s+stops|stops\s+left|time\s+remaining|my\s+trip|active\s+trip|my\s+active\s+alert)\b/i.test(q)) {
+    return { intent: 'REMAINING_STOPS', destination: conversationContext.destination || null, origin: null, mode, alertBeforeStops };
+  }
+
+  // 5. NEARBY_STOPS INTENT ("Nearest bus stop", "metro station near me")
+  if (/\b(?:nearest|closest|nearby|stations?\s+near|stops?\s+near)\b/i.test(q)) {
+    return { intent: 'NEARBY_STOPS', destination: null, origin: null, mode: mode || 'bus', alertBeforeStops: null };
+  }
+
+  // 6. SET_ALERT INTENT ("Alert me 2 stops before Saidapet", "Set an alert for Marina Beach")
+  if (/\b(?:alert\s+me|set\s+(?:an\s+)?alert|remind\s+me)\b/i.test(q)) {
+    let extractedDest = extractTargetPlaceName(raw);
+    if (!extractedDest || extractedDest.toLowerCase() === raw.toLowerCase()) {
+      extractedDest = conversationContext.destination || null;
+    }
+    return { intent: 'SET_ALERT', destination: extractedDest, origin: null, mode: mode || 'bus', alertBeforeStops };
+  }
+
+  // 7. GREETING / GENERAL_HELP INTENT
+  if (/^(?:hi|hello|hey|greetings|who\s+are\s+you|what\s+can\s+you\s+do)$/i.test(q)) {
+    return { intent: 'GREETING', destination: null, origin: null, mode: null, alertBeforeStops: null };
+  }
+
+  // 8. FIND_DESTINATION / FIND_ROUTE INTENT ("i want to saidapet", "I'm going to Marina Beach", "how can i reach t nagar")
+  const extractedDest = extractTargetPlaceName(raw);
+  if (extractedDest && extractedDest.length >= 2) {
+    return { intent: 'FIND_ROUTE', destination: extractedDest, origin: conversationContext.origin || null, mode, alertBeforeStops };
+  }
+
+  return { intent: 'GENERAL_HELP', destination: conversationContext.destination || null, origin: null, mode, alertBeforeStops };
+}
+
+/**
  * Main assistant entry point processing natural language queries with tool calls & structured results.
  * Protected by a hard 10-second Promise.race timeout to guarantee no request hangs indefinitely.
  */
@@ -31,6 +112,7 @@ export async function processAssistantQuery(userQuery, appContext = {}) {
     };
   }
 }
+
 
 /**
  * Detect mode-only intent messages (e.g. "I want to go by bus", "by metro", "using train") with NO destination

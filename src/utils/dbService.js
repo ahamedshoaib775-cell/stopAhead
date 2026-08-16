@@ -418,5 +418,58 @@ export async function clearChatConversationMessages(conversationId, userId = nul
   return { success: true };
 }
 
+/**
+ * Update message text content in Supabase & Local Storage
+ */
+export async function updateChatMessage(conversationId, messageId, newContent) {
+  if (!conversationId || !messageId) return { success: false };
+
+  const localKey = `stopahead_chat_msgs_${conversationId}`;
+  try {
+    const stored = JSON.parse(localStorage.getItem(localKey) || '[]');
+    const updated = stored.map((m) => m.id === messageId ? { ...m, content: newContent, text: newContent } : m);
+    localStorage.setItem(localKey, JSON.stringify(updated));
+  } catch (e) {}
+
+  try {
+    await supabase.from('chat_messages').update({ content: newContent }).eq('id', messageId);
+  } catch (e) {}
+
+  return { success: true };
+}
+
+/**
+ * Truncate/delete all messages created AFTER target messageId in a conversation
+ */
+export async function deleteChatMessagesAfter(conversationId, targetMessageId) {
+  if (!conversationId || !targetMessageId) return { success: false };
+
+  const localKey = `stopahead_chat_msgs_${conversationId}`;
+  let cutOffTime = null;
+
+  try {
+    const stored = JSON.parse(localStorage.getItem(localKey) || '[]');
+    const targetIdx = stored.findIndex((m) => m.id === targetMessageId);
+    if (targetIdx !== -1) {
+      cutOffTime = stored[targetIdx].created_at;
+      const truncated = stored.slice(0, targetIdx + 1);
+      localStorage.setItem(localKey, JSON.stringify(truncated));
+    }
+  } catch (e) {}
+
+  try {
+    if (cutOffTime) {
+      await supabase
+        .from('chat_messages')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .gt('created_at', cutOffTime);
+    }
+  } catch (e) {}
+
+  return { success: true };
+}
+
+
 
 

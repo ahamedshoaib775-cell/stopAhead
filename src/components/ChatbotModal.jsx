@@ -1,8 +1,9 @@
 // ChatbotModal.jsx - Complete Production-Ready StopAhead AI Chatbot Modal (Light Theme)
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Bot, Radio, Compass, Bell, Navigation, Sparkles, RefreshCw, Trash2, Clock } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, Radio, Compass, Bell, Navigation, Sparkles, RefreshCw, Trash2, Clock, Pencil, Check, RotateCcw } from 'lucide-react';
 import { processAssistantQuery } from '../utils/assistantService';
-import { fetchChatConversations, createChatConversation, fetchChatMessages, saveChatMessage, clearChatConversationMessages } from '../utils/dbService';
+import { fetchChatConversations, createChatConversation, fetchChatMessages, saveChatMessage, clearChatConversationMessages, updateChatMessage, deleteChatMessagesAfter } from '../utils/dbService';
+
 
 
 import BestWayThereCard from './chatbot/BestWayThereCard';
@@ -29,9 +30,68 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [clearError, setClearError] = useState(null);
+
+  const [editingMsgId, setEditingMsgId] = useState(null);
+  const [editText, setEditText] = useState('');
+  const [editError, setEditError] = useState(null);
+
   const messagesEndRef = useRef(null);
 
   const { userPosition, userLocation, activeTrip, transportMode = 'bus', onUpdateActiveTrip } = appContext;
+
+  const handleStartEdit = (msg) => {
+    setEditingMsgId(msg.id);
+    setEditText(msg.text);
+    setEditError(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMsgId(null);
+    setEditText('');
+    setEditError(null);
+  };
+
+  const handleSaveEditedMessage = async (targetMsgId) => {
+    if (!editText || !editText.trim() || !targetMsgId) return;
+
+    const trimmedEdit = editText.trim();
+    setIsProcessing(true);
+    setEditError(null);
+
+    try {
+      await updateChatMessage(conversationId, targetMsgId, trimmedEdit);
+      await deleteChatMessagesAfter(conversationId, targetMsgId);
+
+      const targetIdx = messages.findIndex((m) => m.id === targetMsgId);
+      if (targetIdx !== -1) {
+        const updatedUserMsg = { ...messages[targetIdx], text: trimmedEdit };
+        const truncatedList = messages.slice(0, targetIdx);
+        truncatedList.push(updatedUserMsg);
+        setMessages(truncatedList);
+        setEditingMsgId(null);
+
+        const response = await processAssistantQuery(trimmedEdit, appContext);
+        if (response && conversationId) {
+          const botMsgRecord = await saveChatMessage(conversationId, 'assistant', response.responseText, response);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: botMsgRecord.id,
+              sender: 'bot',
+              text: response.responseText,
+              data: response
+            }
+          ]);
+        }
+      }
+    } catch (err) {
+      console.error('[StopAhead Chat Edit Error]:', err);
+      setEditError('Failed to save edit.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
 
   const handleConfirmClear = async () => {
     setIsClearing(true);
@@ -488,12 +548,101 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
                     fontSize: '0.88rem',
                     lineHeight: 1.5,
                     boxShadow: isUser ? '0 4px 14px rgba(2, 90, 237, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.04)',
-                    whiteSpace: 'pre-line'
+                    whiteSpace: 'pre-line',
+                    position: 'relative'
                   }}
                 >
-                  <div>{msg.text}</div>
+                  {isUser && editingMsgId === msg.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', width: '100%', minWidth: '220px' }}>
+                      <textarea
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          borderRadius: '8px',
+                          border: '1px solid #93c5fd',
+                          fontSize: '0.86rem',
+                          background: '#ffffff',
+                          color: '#0f172a',
+                          outline: 'none',
+                          resize: 'vertical',
+                          fontFamily: 'inherit'
+                        }}
+                      />
+                      {editError && (
+                        <div style={{ fontSize: '0.72rem', color: '#fecdd3' }}>⚠️ {editError}</div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.35rem' }}>
+                        <button
+                          type="button"
+                          onClick={handleCancelEdit}
+                          style={{
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '6px',
+                            background: 'rgba(255, 255, 255, 0.2)',
+                            color: '#ffffff',
+                            border: 'none',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEditedMessage(msg.id)}
+                          style={{
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '6px',
+                            background: '#ffffff',
+                            color: '#025AED',
+                            border: 'none',
+                            fontSize: '0.74rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.2rem'
+                          }}
+                        >
+                          <Check size={12} /> Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                        <span>{msg.text}</span>
+                        {isUser && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(msg)}
+                            title="Edit message"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'rgba(255, 255, 255, 0.7)',
+                              cursor: 'pointer',
+                              padding: '2px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '4px',
+                              flexShrink: 0
+                            }}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+
 
                   {/* Render Structured Cards based on metadata */}
+
                   {cardData && (
                     <>
                       {/* Best Way There Card */}
