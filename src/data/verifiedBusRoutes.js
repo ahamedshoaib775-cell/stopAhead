@@ -1,5 +1,6 @@
 // verifiedBusRoutes.js - Verified MTC Chennai & Metropolitan Transit Route Engine
 // Source of truth for bus numbers, ordered stop sequences, direction validation, and canonical stop resolution.
+import { MTC_CSV_BUS_ROUTES } from './mtcDataset';
 
 /**
  * Canonical Stop Alias Dictionary
@@ -947,6 +948,8 @@ export const VERIFIED_MTC_BUS_ROUTES = [
   }
 ];
 
+export const ALL_MTC_ROUTES = [...VERIFIED_MTC_BUS_ROUTES, ...(MTC_CSV_BUS_ROUTES || [])];
+
 /**
  * Strict Route Verification Function (`findVerifiedBusRoutes`)
  * Validates that BOTH origin AND destination exist on the route, and that origin occurs BEFORE destination in sequence.
@@ -968,7 +971,7 @@ export function findVerifiedBusRoutes({ origin, destination, mode = 'bus' }) {
 
   const verifiedMatches = [];
 
-  for (const route of VERIFIED_MTC_BUS_ROUTES) {
+  for (const route of ALL_MTC_ROUTES) {
     if (mode && route.mode !== mode && !(mode === 'bus' && route.mode === 'bus')) {
       continue;
     }
@@ -1056,7 +1059,7 @@ function findTransferBusRoutes(orig, dest, mode = 'bus') {
 
   const transfers = [];
 
-  for (const route1 of VERIFIED_MTC_BUS_ROUTES) {
+  for (const route1 of ALL_MTC_ROUTES) {
     const stops1Lower = route1.stops.map((s) => s.toLowerCase());
     const origIdx = stops1Lower.findIndex((s) => s === cleanOrig || s.includes(cleanOrig) || cleanOrig.includes(s));
 
@@ -1066,7 +1069,7 @@ function findTransferBusRoutes(orig, dest, mode = 'bus') {
       const transferStop = route1.stops[i];
       const cleanTransfer = transferStop.toLowerCase();
 
-      for (const route2 of VERIFIED_MTC_BUS_ROUTES) {
+      for (const route2 of ALL_MTC_ROUTES) {
         if (route2.id === route1.id) continue;
 
         const stops2Lower = route2.stops.map((s) => s.toLowerCase());
@@ -1119,7 +1122,7 @@ export function findAllRoutesServingDestination({ origin, destination, mode = nu
   const directRoutes = [];
   const destinationRoutes = [];
 
-  for (const route of VERIFIED_MTC_BUS_ROUTES) {
+  for (const route of ALL_MTC_ROUTES) {
     if (mode && route.mode !== mode && !(mode === 'bus' && route.mode === 'bus')) {
       continue;
     }
