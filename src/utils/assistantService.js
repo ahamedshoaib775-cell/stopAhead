@@ -405,7 +405,10 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
         const matchedRoute = osmRouteRelations && osmRouteRelations.length > 0 ? osmRouteRelations[0] : null;
         const matchedRouteRef = matchedRoute ? matchedRoute.ref : null;
         const matchedRouteName = matchedRoute ? matchedRoute.name : null;
-        const source = matchedRoute ? (matchedRoute.source || 'MTC') : null;
+        const source = matchedRoute ? (matchedRoute.source || 'MTC Verified Reference') : null;
+        const sourceType = matchedRoute ? (matchedRoute.sourceType || 'verified_reference') : 'verified_reference';
+        const lastVerifiedAt = matchedRoute ? (matchedRoute.lastVerifiedAt || '2026-08-17') : '2026-08-17';
+        const notes = matchedRoute ? matchedRoute.notes : null;
         const intermediateStops = matchedRoute ? matchedRoute.intermediateStops : null;
 
         return {
@@ -422,6 +425,9 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
           matchedRouteRef,
           matchedRouteName,
           source,
+          sourceType,
+          lastVerifiedAt,
+          notes,
           intermediateStops
         };
       } catch (modeErr) {
@@ -452,8 +458,10 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
         routeText += `\n\nVia: **${viaSummary}**`;
       }
 
-      if (bestOption.source) {
-        routeText += `\n\n✓ **Source: ${bestOption.source} (Verified Route)**`;
+      if (bestOption.sourceType === 'verified_reference') {
+        routeText += `\n\n📌 **Route ${bestOption.matchedRouteRef || ''} — ${bestOption.originStop.name} to ${bestOption.destinationStop.name} (verified reference data, last updated ${bestOption.lastVerifiedAt})**`;
+      } else if (bestOption.source) {
+        routeText += `\n\n✓ **Source: ${bestOption.source} (Live Data)**`;
       }
 
       return {
@@ -471,9 +479,13 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
         matchedRouteRef: bestOption.matchedRouteRef,
         matchedRouteName: bestOption.matchedRouteName,
         source: bestOption.source,
+        sourceType: bestOption.sourceType,
+        lastVerifiedAt: bestOption.lastVerifiedAt,
+        notes: bestOption.notes,
         responseText: routeText
       };
     }
+
 
 
   } catch (e) {

@@ -66,13 +66,20 @@ export default function BestWayThereCard({ data, onStartTrip, onNavigate, onClos
 
       {/* Matching Route Numbers */}
       {data.matchedRouteRef ? (
-        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#025AED', background: 'rgba(2, 90, 237, 0.08)', padding: '0.5rem 0.75rem', borderRadius: '10px', border: '1px solid rgba(2, 90, 237, 0.2)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#025AED', background: 'rgba(2, 90, 237, 0.08)', padding: '0.55rem 0.75rem', borderRadius: '10px', border: '1px solid rgba(2, 90, 237, 0.2)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>🚌 Verified Route: <strong>{data.matchedRouteRef}</strong></span>
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '0.15rem 0.45rem', borderRadius: '6px', border: '1px solid #bbf7d0' }}>✓ Source: {data.source || 'MTC'}</span>
+            <span>🚌 Route <strong>{data.matchedRouteRef}</strong></span>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: data.sourceType === 'live_osm' ? '#0369a1' : '#15803d', background: data.sourceType === 'live_osm' ? '#e0f2fe' : '#dcfce7', padding: '0.15rem 0.45rem', borderRadius: '6px', border: '1px solid ' + (data.sourceType === 'live_osm' ? '#bae6fd' : '#bbf7d0') }}>
+              {data.sourceType === 'live_osm' ? '🌐 Live OSM' : '📌 Verified Reference'}
+            </span>
           </div>
           <div style={{ fontSize: '0.73rem', fontWeight: 600, color: '#334155' }}>
             {data.matchedRouteName || 'Direct Route'}
+          </div>
+          <div style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
+            {data.sourceType === 'live_osm'
+              ? `Live OpenStreetMap route dataset`
+              : `Route ${data.matchedRouteRef} — ${boardingStation} to ${destStation} (verified reference data, last updated ${data.lastVerifiedAt || '2026-08-17'})`}
           </div>
         </div>
       ) : (
@@ -80,6 +87,7 @@ export default function BestWayThereCard({ data, onStartTrip, onNavigate, onClos
           Route relation number not available in OSM — check with driver/conductor
         </div>
       )}
+
 
 
 

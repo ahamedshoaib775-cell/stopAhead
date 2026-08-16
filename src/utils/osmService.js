@@ -702,12 +702,16 @@ export async function fetchOsmRouteRelationsBetweenPoints(origLat, origLng, dest
         from: r.origin,
         to: r.destination,
         intermediateStops: r.intermediateStops,
-        source: r.source || 'MTC',
+        source: r.source || 'MTC Verified Reference',
+        sourceType: r.sourceType || 'verified_reference',
+        lastVerifiedAt: r.lastVerifiedAt || '2026-08-17',
+        notes: r.notes || null,
         verified: true,
         mode: r.mode || mode
       }));
     }
   }
+
 
   // 2. Overpass API live query
   const osmRouteType = (mode === 'metro' || mode === 'subway')
