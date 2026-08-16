@@ -380,3 +380,38 @@ export async function saveChatMessage(conversationId, role, content, metadata = 
   return msgRecord;
 }
 
+/**
+ * Clear/delete all chat messages for a specific conversation in Supabase & Local Storage
+ */
+export async function clearChatConversationMessages(conversationId, userId = null) {
+  if (!conversationId) return { success: false, error: 'Invalid conversation ID' };
+
+  const localKey = `stopahead_chat_msgs_${conversationId}`;
+
+  // If user is authenticated, delete from Supabase first
+  if (userId) {
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .delete()
+        .eq('conversation_id', conversationId);
+
+      if (error) {
+        console.error('[StopAhead DB Error] Failed to clear chat messages from Supabase:', error);
+        return { success: false, error: error.message || 'Could not delete chat messages from server.' };
+      }
+    } catch (e) {
+      console.error('[StopAhead DB Exception] Exception clearing chat messages from Supabase:', e);
+      return { success: false, error: 'Network or database error while clearing messages.' };
+    }
+  }
+
+  // Clear local storage cache on success
+  try {
+    localStorage.removeItem(localKey);
+  } catch (e) {}
+
+  return { success: true };
+}
+
+

@@ -1,8 +1,9 @@
 // ChatbotModal.jsx - Complete Production-Ready StopAhead AI Chatbot Modal (Light Theme)
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Bot, Radio, Compass, Bell, Navigation, Sparkles, RefreshCw } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, Radio, Compass, Bell, Navigation, Sparkles, RefreshCw, Trash2, Clock } from 'lucide-react';
 import { processAssistantQuery } from '../utils/assistantService';
-import { fetchChatConversations, createChatConversation, fetchChatMessages, saveChatMessage } from '../utils/dbService';
+import { fetchChatConversations, createChatConversation, fetchChatMessages, saveChatMessage, clearChatConversationMessages } from '../utils/dbService';
+
 
 import BestWayThereCard from './chatbot/BestWayThereCard';
 import AlertCard from './chatbot/AlertCard';
@@ -25,9 +26,41 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
   const [inputQuery, setInputQuery] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [cancelConfirmMsgId, setCancelConfirmMsgId] = useState(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearError, setClearError] = useState(null);
   const messagesEndRef = useRef(null);
 
   const { userPosition, userLocation, activeTrip, transportMode = 'bus', onUpdateActiveTrip } = appContext;
+
+  const handleConfirmClear = async () => {
+    setIsClearing(true);
+    setClearError(null);
+
+    try {
+      const res = await clearChatConversationMessages(conversationId, userId);
+      if (res && !res.success) {
+        setClearError(res.error || 'Failed to delete messages from server.');
+        setIsClearing(false);
+        return;
+      }
+
+      setMessages([
+        {
+          id: 'welcome-1',
+          sender: 'bot',
+          text: `👋 Hi! I'm StopAhead AI.\n\nI can help you:\n• Find the fastest way to any destination\n• Check nearby bus, metro, train & local train stops\n• Set and manage stop alerts\n• Track your current journey\n\nWhere are you headed today?`
+        }
+      ]);
+      setShowClearConfirm(false);
+    } catch (e) {
+      console.error('Clear chat error:', e);
+      setClearError('Could not clear conversation. Please try again.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
 
   // Load persistent conversation & messages from Supabase DB / local storage
   useEffect(() => {
@@ -226,25 +259,177 @@ export default function ChatbotModal({ isOpen, onClose, appContext = {}, onStart
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setClearError(null);
+                setShowClearConfirm(true);
+              }}
+              title="Clear Chat History"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                background: '#f1f5f9',
+                border: 'none',
+                color: '#64748b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <Trash2 size={16} />
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                background: '#f1f5f9',
+                border: 'none',
+                color: '#475569',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Clear Chat Confirmation Modal Overlay */}
+        {showClearConfirm && (
+          <div
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              background: '#f1f5f9',
-              border: 'none',
-              color: '#475569',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.45)',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)',
+              zIndex: 100,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: 'pointer'
+              padding: '1.25rem'
             }}
           >
-            <X size={18} />
-          </button>
-        </div>
+            <div
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                padding: '1.5rem',
+                maxWidth: '340px',
+                width: '100%',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem',
+                textAlign: 'center',
+                border: '1px solid #e2e8f0'
+              }}
+            >
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  background: '#fef2f2',
+                  color: '#ef4444',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto'
+                }}
+              >
+                <Trash2 size={24} />
+              </div>
+
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                  Clear Conversation?
+                </h4>
+                <p style={{ margin: '0.4rem 0 0 0', fontSize: '0.84rem', color: '#64748b', lineHeight: 1.4 }}>
+                  This will permanently delete your conversation history with StopAhead AI. This action cannot be undone.
+                </p>
+              </div>
+
+              {clearError && (
+                <div
+                  style={{
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '10px',
+                    background: '#fff1f2',
+                    border: '1px solid #fecdd3',
+                    color: '#e11d48',
+                    fontSize: '0.78rem',
+                    fontWeight: 600
+                  }}
+                >
+                  ⚠️ {clearError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.2rem' }}>
+                <button
+                  type="button"
+                  disabled={isClearing}
+                  onClick={() => {
+                    setShowClearConfirm(false);
+                    setClearError(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '0.65rem',
+                    borderRadius: '12px',
+                    background: '#f1f5f9',
+                    color: '#334155',
+                    border: '1px solid #cbd5e1',
+                    fontWeight: 700,
+                    fontSize: '0.84rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isClearing}
+                  onClick={handleConfirmClear}
+                  style={{
+                    flex: 1,
+                    padding: '0.65rem',
+                    borderRadius: '12px',
+                    background: '#ef4444',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '0.84rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  {isClearing ? 'Clearing...' : 'Clear Chat'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Messages List Area */}
         <div
