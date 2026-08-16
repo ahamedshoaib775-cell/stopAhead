@@ -1,6 +1,6 @@
-// LocationIndicatorChip.jsx - Non-intrusive status chip confirming current search bias city
+// LocationIndicatorChip.jsx - Subtle inline text indicator for current location bias
 import React from 'react';
-import { MapPin, Navigation, Edit2 } from 'lucide-react';
+import { MapPin, Navigation } from 'lucide-react';
 
 export default function LocationIndicatorChip({ userLocation, onChangeLocation, onRequestPermission }) {
   if (!userLocation) {
@@ -10,17 +10,13 @@ export default function LocationIndicatorChip({ userLocation, onChangeLocation, 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0.45rem 0.75rem',
-          borderRadius: 'var(--radius-md)',
-          background: 'rgba(255, 255, 255, 0.03)',
-          border: '1px dashed var(--border-color)',
-          fontSize: '0.78rem',
+          fontSize: '0.82rem',
           color: 'var(--text-muted)',
-          marginBottom: '0.75rem'
+          marginBottom: '0.6rem'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <MapPin size={13} color="var(--text-muted)" />
+          <MapPin size={14} color="var(--text-muted)" />
           <span>Location bias off</span>
         </div>
         <button
@@ -29,9 +25,11 @@ export default function LocationIndicatorChip({ userLocation, onChangeLocation, 
             background: 'none',
             border: 'none',
             color: 'var(--accent)',
-            fontWeight: 700,
-            fontSize: '0.75rem',
+            fontWeight: 600,
+            fontSize: '0.8rem',
             cursor: 'pointer',
+            textDecoration: 'underline',
+            textUnderlineOffset: '3px',
             padding: 0
           }}
         >
@@ -50,28 +48,20 @@ export default function LocationIndicatorChip({ userLocation, onChangeLocation, 
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0.45rem 0.75rem',
-        borderRadius: 'var(--radius-md)',
-        background: 'rgba(0, 229, 255, 0.06)',
-        border: '1px solid rgba(0, 229, 255, 0.15)',
-        fontSize: '0.78rem',
-        marginBottom: '0.75rem'
+        fontSize: '0.82rem',
+        color: 'var(--text-secondary)',
+        marginBottom: '0.6rem'
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
         {isManual ? (
-          <MapPin size={13} color="var(--accent)" />
+          <MapPin size={14} color="var(--accent)" />
         ) : (
-          <Navigation size={13} color="var(--accent)" />
+          <Navigation size={14} color="var(--accent)" />
         )}
-        <span style={{ color: 'var(--text-secondary)' }}>
-          Showing results near <strong style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{cityName}</strong>
+        <span>
+          Showing results near <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{cityName}</strong>
         </span>
-        {isManual && (
-          <span style={{ fontSize: '0.68rem', opacity: 0.7, background: 'rgba(255,255,255,0.1)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
-            manual
-          </span>
-        )}
       </div>
 
       <button
@@ -81,19 +71,18 @@ export default function LocationIndicatorChip({ userLocation, onChangeLocation, 
           background: 'none',
           border: 'none',
           color: 'var(--accent)',
-          fontWeight: 700,
-          fontSize: '0.75rem',
+          fontWeight: 600,
+          fontSize: '0.8rem',
           cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.2rem',
+          textDecoration: 'underline',
+          textUnderlineOffset: '3px',
           padding: 0
         }}
         id="btn-change-location"
       >
-        <Edit2 size={11} />
-        <span>Change location</span>
+        change
       </button>
     </div>
   );
 }
+

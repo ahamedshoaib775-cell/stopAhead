@@ -247,7 +247,7 @@ export default function SetDestinationScreen({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
       {/* Location Explanation Modal */}
       {showPermissionModal && (
         <LocationPermissionModal
@@ -273,8 +273,6 @@ export default function SetDestinationScreen({
         />
       )}
 
-
-
       {/* Title */}
       <div>
         <h2 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '0.2rem' }}>Set Destination</h2>
@@ -283,28 +281,44 @@ export default function SetDestinationScreen({
         </p>
       </div>
 
-      {/* Step 1: Transit Mode Selection ("How are you traveling?") */}
+      {/* Mode Selector */}
       <TransitModeSelector
         selectedMode={transportMode}
         onSelectMode={handleSelectTransportMode}
       />
 
-      {/* Route Map Preview */}
-      <div style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border-color)', position: 'relative', width: '100%', minHeight: '170px' }}>
-        <div style={{ padding: '0.4rem 0.75rem', background: 'rgba(255,255,255,0.03)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Route Map Preview</span>
-          {isLoadingRoute ? (
-            <span style={{ color: 'var(--accent)', fontSize: '0.7rem' }}>Calculating OSRM route...</span>
-          ) : routeError ? (
-            <span style={{ color: '#ef4444', fontSize: '0.7rem' }}>⚠️ {routeError}</span>
-          ) : selectedRoute?.distKm ? (
-            <span style={{ color: 'var(--accent)', fontSize: '0.7rem' }}>{selectedRoute.distKm} km • ~{selectedRoute.durationMins} mins</span>
-          ) : null}
-        </div>
-
-        {routeError && (
-          <div style={{ position: 'absolute', inset: 0, top: '28px', zIndex: 10, background: 'rgba(15, 20, 31, 0.9)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', textAlign: 'center', fontSize: '0.82rem', fontWeight: 700 }}>
-            <span>⚠️ {routeError}</span>
+      {/* Route Map Section with Floating Pill Overlay */}
+      <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)', position: 'relative', width: '100%', minHeight: '170px' }}>
+        {(selectedRoute?.distKm || isLoadingRoute || routeError) && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 12,
+              left: 12,
+              zIndex: 20,
+              background: 'rgba(15, 23, 42, 0.85)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '999px',
+              padding: '0.35rem 0.8rem',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4)'
+            }}
+          >
+            {isLoadingRoute ? (
+              <span style={{ color: 'var(--accent)' }}>Calculating route...</span>
+            ) : routeError ? (
+              <span style={{ color: '#ef4444' }}>⚠️ {routeError}</span>
+            ) : (
+              <span style={{ color: 'var(--text-primary)' }}>
+                📍 <strong style={{ color: 'var(--accent)' }}>{selectedRoute.distKm} km</strong> • ~{selectedRoute.durationMins} mins
+              </span>
+            )}
           </div>
         )}
 
@@ -321,22 +335,18 @@ export default function SetDestinationScreen({
         />
       </div>
 
-      {/* Step 2: Destination Stop */}
-      <div className="quiet-card">
-        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
-          Destination Stop
-        </div>
-
-        {/* Location Indicator Chip & Override Action */}
+      {/* Destination Stop Section */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {/* Subtle Location Indicator Text Line */}
         <LocationIndicatorChip
           userLocation={userLocation}
           onChangeLocation={() => setShowCityOverrideModal(true)}
           onRequestPermission={() => setShowPermissionModal(true)}
         />
 
-        {/* Search Input */}
-        <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
-          <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
+        {/* Prominent Search Input */}
+        <div style={{ position: 'relative' }}>
+          <Search size={18} color="var(--text-muted)" style={{ position: 'absolute', left: 16, top: 15 }} />
           <input
             type="text"
             placeholder={
@@ -348,22 +358,23 @@ export default function SetDestinationScreen({
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
               width: '100%',
-              padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+              padding: '0.85rem 1rem 0.85rem 2.8rem',
               borderRadius: 'var(--radius-md)',
-              background: 'rgba(0, 0, 0, 0.2)',
-              border: '1px solid var(--border-color)',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
               color: 'var(--text-primary)',
-              fontSize: '0.9rem',
-              outline: 'none'
+              fontSize: '0.95rem',
+              outline: 'none',
+              transition: 'border-color 0.2s ease'
             }}
           />
         </div>
 
         {/* Live Search Results */}
         {osmSearchResults.length > 0 && (
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, marginBottom: '0.4rem' }}>
-              SEARCH RESULTS {userLocation?.cityName ? `(RESTRICTED TO ${userLocation.cityName.toUpperCase()})` : ''}
+          <div style={{ marginTop: '0.5rem' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, marginBottom: '0.5rem' }}>
+              SEARCH RESULTS {userLocation?.cityName ? `(NEAR ${userLocation.cityName.toUpperCase()})` : ''}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
               {osmSearchResults.map((place) => {
@@ -373,10 +384,10 @@ export default function SetDestinationScreen({
                     key={place.id}
                     onClick={() => handleSelectDestination(place)}
                     style={{
-                      padding: '0.65rem 0.85rem',
+                      padding: '0.7rem 0.9rem',
                       borderRadius: 'var(--radius-md)',
-                      background: isSelected ? 'rgba(2, 90, 237, 0.15)' : 'rgba(2, 90, 237, 0.06)',
-                      border: isSelected ? '1px solid var(--accent)' : '1px solid rgba(2, 90, 237, 0.2)',
+                      background: isSelected ? 'rgba(2, 90, 237, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                      border: isSelected ? '1px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.05)',
                       cursor: 'pointer',
                       fontSize: '0.85rem',
                       display: 'flex',
@@ -385,10 +396,10 @@ export default function SetDestinationScreen({
                     }}
                   >
                     <div>
-                      <div style={{ fontWeight: 700 }}>{place.name}</div>
+                      <div style={{ fontWeight: isSelected ? 700 : 600 }}>{place.name}</div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{place.description}</div>
                     </div>
-                    {isSelected ? <Check size={16} color="var(--accent)" /> : <MapPin size={14} color="var(--accent)" />}
+                    {isSelected ? <Check size={16} color="var(--accent)" /> : <MapPin size={14} color="var(--text-muted)" />}
                   </div>
                 );
               })}
@@ -398,18 +409,18 @@ export default function SetDestinationScreen({
 
         {/* Detected Nearby Stops List */}
         {!searchQuery && (
-          <div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <Radio size={12} />
-              <span>NEARBY STOPS ({nearbyStops.length} FOUND)</span>
+          <div style={{ marginTop: '0.25rem' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Radio size={13} color="var(--accent)" />
+              <span>Nearby Stops ({nearbyStops.length} found)</span>
             </div>
 
             {isLoadingNearby ? (
-              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                 Finding nearby stops...
               </div>
             ) : nearbyStops.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '200px', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '220px', overflowY: 'auto' }}>
                 {nearbyStops.map((stop) => {
                   const isSelected = selectedDestinationStop?.id === stop.id;
                   return (
@@ -419,8 +430,8 @@ export default function SetDestinationScreen({
                       style={{
                         padding: '0.75rem 0.9rem',
                         borderRadius: 'var(--radius-md)',
-                        background: isSelected ? 'rgba(2, 90, 237, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                        border: isSelected ? '1px solid var(--accent)' : '1px solid var(--border-color)',
+                        background: isSelected ? 'rgba(2, 90, 237, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                        border: isSelected ? '1px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.05)',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -428,12 +439,12 @@ export default function SetDestinationScreen({
                       }}
                     >
                       <div>
-                        <div style={{ fontWeight: isSelected ? 700 : 600, fontSize: '0.9rem' }}>
+                        <div style={{ fontWeight: isSelected ? 700 : 600, fontSize: '0.9rem', color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
                           {stop.name}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', gap: '0.4rem' }}>
                           <span>{stop.description}</span>
-                          <span style={{ color: 'var(--accent)', fontWeight: 700 }}>• {stop.distKm} km away</span>
+                          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>• {stop.distKm} km away</span>
                         </div>
                       </div>
 
@@ -452,13 +463,13 @@ export default function SetDestinationScreen({
                 style={{
                   padding: '1.25rem 1rem',
                   borderRadius: 'var(--radius-md)',
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px dashed var(--border-color)',
+                  background: 'rgba(255, 255, 255, 0.01)',
+                  border: '1px dashed rgba(255, 255, 255, 0.1)',
                   textAlign: 'center'
                 }}
               >
-                <AlertCircle size={22} color="var(--accent)" style={{ marginBottom: '0.4rem' }} />
-                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
+                <AlertCircle size={20} color="var(--accent)" style={{ marginBottom: '0.4rem' }} />
+                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
                   No {transportMode} stations found within {searchedRadiusKm || 10} km of {userLocation?.cityName || 'your location'}
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
@@ -475,7 +486,7 @@ export default function SetDestinationScreen({
                     <span>Expand Search Radius (15 km)</span>
                   </button>
 
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, marginTop: '0.2rem' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginTop: '0.2rem' }}>
                     Or search city transit landmarks:
                   </div>
 
@@ -488,8 +499,8 @@ export default function SetDestinationScreen({
                         style={{
                           padding: '0.3rem 0.65rem',
                           borderRadius: 'var(--radius-full)',
-                          background: 'rgba(0, 229, 255, 0.08)',
-                          border: '1px solid rgba(0, 229, 255, 0.2)',
+                          background: 'rgba(2, 90, 237, 0.08)',
+                          border: '1px solid rgba(2, 90, 237, 0.2)',
                           color: 'var(--accent)',
                           fontSize: '0.75rem',
                           fontWeight: 600,
@@ -507,12 +518,12 @@ export default function SetDestinationScreen({
         )}
       </div>
 
-      {/* Selected Destination Details */}
+      {/* Selected Destination Details Highlight Banner */}
       {selectedDestinationStop && (
-        <div className="quiet-card active-accent">
+        <div style={{ background: 'rgba(2, 90, 237, 0.08)', border: '1px solid rgba(2, 90, 237, 0.25)', borderRadius: 'var(--radius-lg)', padding: '1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.25rem' }}>
                 {selectedTargetPlace?.isPlace ? 'Target Destination & Closest Transit Stop' : 'Selected Destination Stop'}
               </div>
               <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
@@ -522,8 +533,8 @@ export default function SetDestinationScreen({
                 {selectedTargetPlace ? selectedTargetPlace.description : selectedDestinationStop.description}
               </div>
               {selectedTargetPlace && selectedDestinationStop && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.4rem' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 700, background: 'rgba(2, 90, 237, 0.12)', padding: '0.3rem 0.5rem', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600, background: 'rgba(2, 90, 237, 0.15)', padding: '0.3rem 0.55rem', borderRadius: '6px', display: 'inline-block' }}>
                     🚉 Target Station Stop: {selectedDestinationStop.name}
                   </div>
 
@@ -538,14 +549,14 @@ export default function SetDestinationScreen({
                   )}
 
                   {(stationGapInfo?.isVeryFarGap || (transportMode !== 'bus' && stationGapInfo?.gapKm > 3.5)) && (
-                    <div style={{ marginTop: '0.5rem', padding: '0.65rem 0.8rem', background: 'rgba(0, 229, 255, 0.08)', border: '1px solid rgba(0, 229, 255, 0.3)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <div style={{ marginTop: '0.5rem', padding: '0.65rem 0.8rem', background: 'rgba(2, 90, 237, 0.08)', border: '1px solid rgba(2, 90, 237, 0.3)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                         This location isn't well served by {transportMode.toUpperCase()}. Try Bus instead?
                       </div>
                       <button
                         type="button"
                         onClick={() => handleSelectTransportMode('bus')}
-                        style={{ padding: '0.35rem 0.65rem', borderRadius: 'var(--radius-sm)', background: 'var(--accent)', color: '#000', fontWeight: 800, fontSize: '0.75rem', border: 'none', cursor: 'pointer', flexShrink: 0 }}
+                        style={{ padding: '0.35rem 0.65rem', borderRadius: 'var(--radius-sm)', background: 'var(--accent)', color: '#ffffff', fontWeight: 700, fontSize: '0.75rem', border: 'none', cursor: 'pointer', flexShrink: 0 }}
                       >
                         Switch to Bus
                       </button>
@@ -572,7 +583,7 @@ export default function SetDestinationScreen({
                 style={{
                   padding: '0.4rem 0.75rem',
                   borderRadius: 'var(--radius-md)',
-                  background: 'rgba(0, 229, 255, 0.15)',
+                  background: 'rgba(2, 90, 237, 0.12)',
                   border: '1px solid var(--accent)',
                   color: 'var(--accent)',
                   fontSize: '0.75rem',
@@ -580,7 +591,8 @@ export default function SetDestinationScreen({
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.3rem'
+                  gap: '0.3rem',
+                  flexShrink: 0
                 }}
                 id="btn-save-favorite-route"
               >
@@ -592,24 +604,30 @@ export default function SetDestinationScreen({
         </div>
       )}
 
-      {/* Step 3: Alert Threshold */}
-      <div className="quiet-card">
-        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
-          Alert Lead Time
+      {/* Step 3: Alert Lead Time Section */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+            Alert Lead Time
+          </span>
+          <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--accent)' }}>
+            {thresholdValue} {thresholdType === 'stops' ? (thresholdValue === 1 ? 'stop before' : 'stops before') : (thresholdValue === 1 ? 'minute before' : 'minutes before')}
+          </span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
           <button
             onClick={() => setThresholdType('stops')}
             style={{
-              padding: '0.65rem',
+              padding: '0.55rem',
               borderRadius: 'var(--radius-md)',
-              background: thresholdType === 'stops' ? 'var(--accent)' : 'rgba(255,255,255,0.05)',
-              color: thresholdType === 'stops' ? 'var(--accent-text)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '0.85rem',
-              border: 'none',
-              cursor: 'pointer'
+              background: thresholdType === 'stops' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.03)',
+              color: thresholdType === 'stops' ? '#ffffff' : 'var(--text-secondary)',
+              fontWeight: thresholdType === 'stops' ? 700 : 500,
+              fontSize: '0.82rem',
+              border: thresholdType === 'stops' ? '1px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.06)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
             }}
           >
             Stops Mode
@@ -617,25 +635,19 @@ export default function SetDestinationScreen({
           <button
             onClick={() => setThresholdType('minutes')}
             style={{
-              padding: '0.65rem',
+              padding: '0.55rem',
               borderRadius: 'var(--radius-md)',
-              background: thresholdType === 'minutes' ? 'var(--accent)' : 'rgba(255,255,255,0.05)',
-              color: thresholdType === 'minutes' ? 'var(--accent-text)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '0.85rem',
-              border: 'none',
-              cursor: 'pointer'
+              background: thresholdType === 'minutes' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.03)',
+              color: thresholdType === 'minutes' ? '#ffffff' : 'var(--text-secondary)',
+              fontWeight: thresholdType === 'minutes' ? 700 : 500,
+              fontSize: '0.82rem',
+              border: thresholdType === 'minutes' ? '1px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.06)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
             }}
           >
             Minutes Mode
           </button>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Notify me:</span>
-          <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent)' }}>
-            {thresholdValue} {thresholdType === 'stops' ? (thresholdValue === 1 ? 'stop before' : 'stops before') : (thresholdValue === 1 ? 'minute before' : 'minutes before')}
-          </span>
         </div>
 
         <input
@@ -644,6 +656,7 @@ export default function SetDestinationScreen({
           max="10"
           value={thresholdValue}
           onChange={(e) => setThresholdValue(Number(e.target.value))}
+          style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
         />
       </div>
 
@@ -652,7 +665,7 @@ export default function SetDestinationScreen({
         className="btn-primary"
         onClick={handleConfirmStart}
         disabled={!selectedDestinationStop}
-        style={{ opacity: selectedDestinationStop ? 1 : 0.5, cursor: selectedDestinationStop ? 'pointer' : 'not-allowed' }}
+        style={{ opacity: selectedDestinationStop ? 1 : 0.5, cursor: selectedDestinationStop ? 'pointer' : 'not-allowed', marginTop: '0.5rem' }}
         id="btn-confirm-start-trip"
       >
         <MapPin size={20} />
@@ -662,3 +675,4 @@ export default function SetDestinationScreen({
     </div>
   );
 }
+

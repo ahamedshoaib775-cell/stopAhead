@@ -1,6 +1,6 @@
 // TransitModeSelector.jsx - "How are you traveling?" Selection Component
 import React from 'react';
-import { Bus, Train, TrainFront, TrainTrack } from 'lucide-react';
+import { Bus, Train, TrainFront, TrainTrack, Check } from 'lucide-react';
 
 export const TRANSIT_MODES = [
   {
@@ -35,72 +35,75 @@ export function getTransitModeInfo(modeId) {
 
 export default function TransitModeSelector({ selectedMode = 'bus', onSelectMode }) {
   return (
-    <div className="quiet-card">
-      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
-        How are you traveling?
-      </div>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '0.6rem'
+      }}
+    >
+      {TRANSIT_MODES.map((mode) => {
+        const IconComp = mode.icon;
+        const isSelected = selectedMode === mode.id;
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '0.65rem'
-        }}
-      >
-        {TRANSIT_MODES.map((mode) => {
-          const IconComp = mode.icon;
-          const isSelected = selectedMode === mode.id;
-
-          return (
-            <button
-              key={mode.id}
-              type="button"
-              onClick={() => onSelectMode(mode.id)}
-              style={{
-                padding: '0.85rem 0.75rem',
-                borderRadius: 'var(--radius-md)',
-                background: isSelected ? 'rgba(2, 90, 237, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border-color)',
-                color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                gap: '0.4rem',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'all 0.2s ease',
-                boxShadow: isSelected ? '0 4px 14px rgba(2, 90, 237, 0.25)' : 'none'
-              }}
-              id={`btn-transit-mode-${mode.id}`}
-            >
+        return (
+          <button
+            key={mode.id}
+            type="button"
+            onClick={() => onSelectMode(mode.id)}
+            style={{
+              padding: '0.75rem 0.85rem',
+              borderRadius: 'var(--radius-md)',
+              background: isSelected ? 'rgba(2, 90, 237, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+              border: isSelected ? '1px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.06)',
+              color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem',
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s ease',
+              boxShadow: 'none'
+            }}
+            id={`btn-transit-mode-${mode.id}`}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
               <div
                 style={{
                   width: '32px',
                   height: '32px',
-                  borderRadius: '10px',
-                  background: isSelected ? 'var(--accent)' : 'rgba(255, 255, 255, 0.06)',
+                  borderRadius: '8px',
+                  background: isSelected ? 'var(--accent)' : 'rgba(255, 255, 255, 0.05)',
                   color: isSelected ? '#ffffff' : 'var(--text-muted)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  transition: 'all 0.2s ease'
+                  flexShrink: 0
                 }}
               >
-                <IconComp size={18} />
+                <IconComp size={16} />
               </div>
 
-              <div>
-                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: isSelected ? 700 : 600, fontSize: '0.88rem', color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {mode.label}
                 </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '1px', lineHeight: 1.2 }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '1px', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {mode.description}
                 </div>
               </div>
-            </button>
-          );
-        })}
-      </div>
+            </div>
+
+            {isSelected && (
+              <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Check size={11} color="#ffffff" strokeWidth={3} />
+              </div>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
+
