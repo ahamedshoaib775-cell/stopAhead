@@ -1,6 +1,7 @@
-// osmService.js - OpenStreetMap (Nominatim + Leaflet + Overpass + OSRM) integration service
 import { calculateHaversineDistance } from './geoHelper';
 import { findVerifiedBusRoutes, getCanonicalStopName } from '../data/verifiedBusRoutes';
+import { findNearestMetroStation } from '../data/metroDataset';
+import { findIndiaMetroStationNearest } from '../data/indiaTransitDataset';
 
 
 /**
@@ -533,15 +534,29 @@ export async function fetchNearestTransitStopToPoint(targetLat, targetLng, trans
   if (!targetLat || !targetLng) return null;
 
   try {
-    // 1. Try tight 1.5 km radius
+    // 1. Instant check for Metro & Train across CMRL and Nationwide India Metro/Rail Datasets
+    if (transportMode === 'metro' || transportMode === 'subway') {
+      const cmrlRes = findNearestMetroStation(targetLat, targetLng);
+      if (cmrlRes) return cmrlRes;
+
+      const indiaMetroRes = findIndiaMetroStationNearest(targetLat, targetLng, 'metro');
+      if (indiaMetroRes) return indiaMetroRes;
+    }
+
+    if (transportMode === 'train' || transportMode === 'local_train') {
+      const indiaTrainRes = findIndiaMetroStationNearest(targetLat, targetLng, transportMode);
+      if (indiaTrainRes) return indiaTrainRes;
+    }
+
+    // 2. Try tight 1.5 km radius
     let stops = await fetchOverpassNearbyStops(targetLat, targetLng, 1500, transportMode);
 
-    // 2. Expand to 5 km if nothing found
+    // 3. Expand to 5 km if nothing found
     if (!stops || stops.length === 0) {
       stops = await fetchOverpassNearbyStops(targetLat, targetLng, 5000, transportMode);
     }
 
-    // 3. Expand to 10 km if still nothing found
+    // 4. Expand to 10 km if still nothing found
     if (!stops || stops.length === 0) {
       stops = await fetchOverpassNearbyStops(targetLat, targetLng, 10000, transportMode);
     }
@@ -549,7 +564,7 @@ export async function fetchNearestTransitStopToPoint(targetLat, targetLng, trans
     if (stops && stops.length > 0) {
       const nearestStop = stops[0];
       const gapKm = parseFloat(nearestStop.distKm.toFixed(1));
-      const walkingMins = Math.max(1, Math.round(gapKm * 12)); // ~12 mins per km walking speed
+      const walkingMins = Math.max(1, Math.round(gapKm * 12));
 
       return {
         nearestStop,
@@ -560,7 +575,6 @@ export async function fetchNearestTransitStopToPoint(targetLat, targetLng, trans
       };
     }
 
-    // Return null if no real transit stop exists in OSM for this mode — NEVER fabricate a fake stop!
     return null;
   } catch (err) {
     return null;
