@@ -12,9 +12,13 @@ export const CANONICAL_STOP_ALIASES = {
     'poonamallee',
     'poonamallee bus stand',
     'poonamallee b.s.',
+    'poonamallee b.s',
+    'poonamallee b.t',
     'poonamallee terminus',
     'poonamallee trunk road',
     'poonamallee bypass',
+    'poonamallee depot',
+    'poonamallee bus depot',
     'g.h.'
   ],
   'saidapet': [
@@ -46,7 +50,8 @@ export const CANONICAL_STOP_ALIASES = {
   'kumananchavadi': [
     'kumananchavadi',
     'kumananchavadi bus stop',
-    'kumanan chavadi'
+    'kumanan chavadi',
+    'kumunanchavadi'
   ],
   'little mount': [
     'little mount',
@@ -68,8 +73,17 @@ export const CANONICAL_STOP_ALIASES = {
   't nagar': [
     't nagar',
     't. nagar',
+    't.nagar',
+    'tnagar',
     'thyagaraya nagar',
-    't nagar bus terminus'
+    'thiagaraya nagar',
+    'thiyagaraya nagar',
+    't nagar bus terminus',
+    't.nagar bus terminus',
+    't nagar bus stand',
+    't.nagar bus stand',
+    't nagar b.s',
+    't.nagar b.s'
   ],
   'broadway': [
     'broadway',
@@ -971,39 +985,34 @@ export function findVerifiedBusRoutes({ origin, destination, mode = 'bus' }) {
   }
 
   const verifiedMatches = [];
+  const seenRouteNumbers = new Set();
 
   for (const route of ALL_MTC_ROUTES) {
     if (mode && route.mode !== mode && !(mode === 'bus' && route.mode === 'bus')) {
       continue;
     }
 
+    const stopsCanonical = route.stops.map((s) => getCanonicalStopName(s).toLowerCase());
     const stopsLower = route.stops.map((s) => s.toLowerCase());
 
-    // Find stop indexes matching canonical origin & destination
-    const origIdx = stopsLower.findIndex((s) => s === cleanOrig || s.includes(cleanOrig) || cleanOrig.includes(s));
-    const destIdx = stopsLower.findIndex((s) => s === cleanDest || s.includes(cleanDest) || cleanDest.includes(s));
+    const origIdx = stopsCanonical.findIndex((cs, i) => cs === cleanOrig || cs.includes(cleanOrig) || cleanOrig.includes(cs) || stopsLower[i].includes(cleanOrig));
+    const destIdx = stopsCanonical.findIndex((cs, i) => cs === cleanDest || cs.includes(cleanDest) || cleanDest.includes(cs) || stopsLower[i].includes(cleanDest));
 
-    // STRICT VALIDATION: BOTH origin AND destination MUST exist on the route!
-    if (origIdx === -1 || destIdx === -1) {
+    if (origIdx === -1 || destIdx === -1 || origIdx === destIdx) {
       continue;
     }
 
-    // DIRECTION VALIDATION: Forward vs Reverse
-    let isForward = destIdx > origIdx;
-    let isReverse = origIdx > destIdx;
-
-    if (!isForward && !isReverse) continue;
-
-    let dirString = '';
-    let intermediateStops = [];
-
-    if (isForward) {
-      dirString = `${route.stops[origIdx]} → ${route.stops[destIdx]}`;
-      intermediateStops = route.stops.slice(origIdx + 1, destIdx);
-    } else {
-      dirString = `${route.stops[origIdx]} → ${route.stops[destIdx]}`;
-      intermediateStops = route.stops.slice(destIdx + 1, origIdx).reverse();
+    const normNum = route.routeNumber.trim();
+    if (seenRouteNumbers.has(normNum.toLowerCase())) {
+      continue;
     }
+    seenRouteNumbers.add(normNum.toLowerCase());
+
+    const isForward = destIdx > origIdx;
+    const dirString = `${route.stops[origIdx]} → ${route.stops[destIdx]}`;
+    const intermediateStops = isForward
+      ? route.stops.slice(origIdx + 1, destIdx)
+      : route.stops.slice(destIdx + 1, origIdx).reverse();
 
     verifiedMatches.push({
       routeNumber: route.routeNumber,
@@ -1024,10 +1033,8 @@ export function findVerifiedBusRoutes({ origin, destination, mode = 'bus' }) {
       lastVerifiedAt: route.lastVerifiedAt || '2026-08-17',
       notes: route.notes || null
     });
-
   }
 
-  // Sort verified matches: Smallest stop count first (most direct route)
   verifiedMatches.sort((a, b) => a.stopCount - b.stopCount);
 
   if (verifiedMatches.length > 0) {
@@ -1039,7 +1046,6 @@ export function findVerifiedBusRoutes({ origin, destination, mode = 'bus' }) {
     };
   }
 
-  // Check if a transfer route can be recommended using verified routes (e.g. Poonamallee -> Saidapet -> Marina Beach)
   const transferRoutes = findTransferBusRoutes(canonOrigin, canonDest, mode);
 
   return {
@@ -1061,8 +1067,9 @@ function findTransferBusRoutes(orig, dest, mode = 'bus') {
   const transfers = [];
 
   for (const route1 of ALL_MTC_ROUTES) {
+    const stops1Canonical = route1.stops.map((s) => getCanonicalStopName(s).toLowerCase());
     const stops1Lower = route1.stops.map((s) => s.toLowerCase());
-    const origIdx = stops1Lower.findIndex((s) => s === cleanOrig || s.includes(cleanOrig) || cleanOrig.includes(s));
+    const origIdx = stops1Canonical.findIndex((cs, i) => cs === cleanOrig || cs.includes(cleanOrig) || cleanOrig.includes(cs) || stops1Lower[i].includes(cleanOrig));
 
     if (origIdx === -1) continue;
 
@@ -1073,9 +1080,10 @@ function findTransferBusRoutes(orig, dest, mode = 'bus') {
       for (const route2 of ALL_MTC_ROUTES) {
         if (route2.id === route1.id) continue;
 
+        const stops2Canonical = route2.stops.map((s) => getCanonicalStopName(s).toLowerCase());
         const stops2Lower = route2.stops.map((s) => s.toLowerCase());
-        const transferIdx2 = stops2Lower.findIndex((s) => s === cleanTransfer || s.includes(cleanTransfer));
-        const destIdx2 = stops2Lower.findIndex((s) => s === cleanDest || s.includes(cleanDest) || cleanDest.includes(s));
+        const transferIdx2 = stops2Canonical.findIndex((cs, j) => cs === cleanTransfer || cs.includes(cleanTransfer) || stops2Lower[j].includes(cleanTransfer));
+        const destIdx2 = stops2Canonical.findIndex((cs, j) => cs === cleanDest || cs.includes(cleanDest) || cleanDest.includes(cs) || stops2Lower[j].includes(cleanDest));
 
         if (transferIdx2 !== -1 && destIdx2 !== -1 && destIdx2 > transferIdx2) {
           transfers.push({
@@ -1106,7 +1114,7 @@ function findTransferBusRoutes(orig, dest, mode = 'bus') {
 
 /**
  * Find ALL routes serving destination:
- * 1. Direct reachable routes (where origin exists BEFORE destination on the route)
+ * 1. Direct reachable routes (where origin exists BEFORE or AFTER destination on the route, merged by route number)
  * 2. Destination-only routes (routes that serve destination but do NOT have a reachable stop near origin)
  */
 export function findAllRoutesServingDestination({ origin, destination, mode = null }) {
@@ -1120,20 +1128,23 @@ export function findAllRoutesServingDestination({ origin, destination, mode = nu
   const cleanOrig = canonOrigin.toLowerCase();
   const cleanDest = canonDest.toLowerCase();
 
-  const directRoutes = [];
-  const destinationRoutes = [];
+  const directRoutesMap = new Map();
+  const destinationRoutesMap = new Map();
 
   for (const route of ALL_MTC_ROUTES) {
     if (mode && route.mode !== mode && !(mode === 'bus' && route.mode === 'bus')) {
       continue;
     }
 
+    const stopsCanonical = route.stops.map((s) => getCanonicalStopName(s).toLowerCase());
     const stopsLower = route.stops.map((s) => s.toLowerCase());
 
-    const origIdx = cleanOrig ? stopsLower.findIndex((s) => s === cleanOrig || s.includes(cleanOrig) || cleanOrig.includes(s)) : -1;
-    const destIdx = stopsLower.findIndex((s) => s === cleanDest || s.includes(cleanDest) || cleanDest.includes(s));
+    const origIdx = cleanOrig ? stopsCanonical.findIndex((cs, i) => cs === cleanOrig || cs.includes(cleanOrig) || cleanOrig.includes(cs) || stopsLower[i].includes(cleanOrig)) : -1;
+    const destIdx = stopsCanonical.findIndex((cs, i) => cs === cleanDest || cs.includes(cleanDest) || cleanDest.includes(cs) || stopsLower[i].includes(cleanDest));
 
     if (destIdx === -1) continue;
+
+    const normNum = (route.routeNumber || '').trim();
 
     const routeObj = {
       id: route.id,
@@ -1158,7 +1169,7 @@ export function findAllRoutesServingDestination({ origin, destination, mode = nu
         : route.stops.slice(destIdx + 1, origIdx).reverse();
       const stopCount = Math.abs(destIdx - origIdx);
 
-      directRoutes.push({
+      const matchedDirect = {
         ...routeObj,
         isDirect: true,
         originStopName: route.stops[origIdx],
@@ -1168,17 +1179,29 @@ export function findAllRoutesServingDestination({ origin, destination, mode = nu
         stopCount,
         intermediateStops,
         direction: `${route.stops[origIdx]} → ${route.stops[destIdx]}`
-      });
+      };
+
+      const existing = directRoutesMap.get(normNum.toLowerCase());
+      if (!existing || matchedDirect.stopCount < existing.stopCount || matchedDirect.sourceType === 'verified_reference') {
+        directRoutesMap.set(normNum.toLowerCase(), matchedDirect);
+      }
     } else if (origIdx === -1 && destIdx !== -1) {
-      destinationRoutes.push({
+      const matchedDestOnly = {
         ...routeObj,
         isDirect: false,
         direction: `${route.stops[0]} → ${route.stops[route.stops.length - 1]}`,
         isReachableFromOrigin: false,
         caveat: 'Not directly reachable from your current location — requires transfer or walk to a different boarding point'
-      });
+      };
+
+      if (!destinationRoutesMap.has(normNum.toLowerCase())) {
+        destinationRoutesMap.set(normNum.toLowerCase(), matchedDestOnly);
+      }
     }
   }
+
+  const directRoutes = Array.from(directRoutesMap.values());
+  const destinationRoutes = Array.from(destinationRoutesMap.values()).filter(r => !directRoutesMap.has(r.routeNumber.trim().toLowerCase()));
 
   directRoutes.sort((a, b) => a.stopCount - b.stopCount);
 
