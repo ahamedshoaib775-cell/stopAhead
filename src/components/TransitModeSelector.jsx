@@ -94,18 +94,18 @@ export default function TransitModeSelector({ selectedMode = 'bus', onSelectMode
               title={availInfo.message || (isAvailable ? `${mode.label} available nearby` : `No ${mode.label} nearby`)}
               style={{
                 padding: '0.65rem 0.5rem',
-                borderRadius: 'var(--radius-md)',
+                borderRadius: '16px',
                 background: isSelected
-                  ? 'rgba(2, 90, 237, 0.15)'
+                  ? 'var(--accent)'
                   : isHovered
-                  ? 'rgba(255, 255, 255, 0.06)'
+                  ? 'rgba(255, 255, 255, 0.05)'
                   : 'rgba(255, 255, 255, 0.02)',
                 border: isSelected
                   ? '1px solid var(--accent)'
                   : isHovered
-                  ? '1px solid rgba(255, 255, 255, 0.18)'
-                  : '1px solid rgba(255, 255, 255, 0.06)',
-                color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  ? '1px solid rgba(255, 255, 255, 0.12)'
+                  : '1px solid rgba(255, 255, 255, 0.05)',
+                color: isSelected ? '#ffffff' : 'var(--text-secondary)',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -114,8 +114,8 @@ export default function TransitModeSelector({ selectedMode = 'bus', onSelectMode
                 cursor: 'pointer',
                 textAlign: 'center',
                 transition: 'all 150ms ease',
-                boxShadow: isSelected ? '0 4px 12px rgba(2, 90, 237, 0.2)' : 'none',
-                opacity: isAvailable ? 1 : 0.55,
+                boxShadow: isSelected ? '0 4px 14px rgba(2, 90, 237, 0.35)' : 'none',
+                opacity: isAvailable ? 1 : 0.6,
                 position: 'relative',
                 userSelect: 'none'
               }}
@@ -131,23 +131,23 @@ export default function TransitModeSelector({ selectedMode = 'bus', onSelectMode
                     width: '15px',
                     height: '15px',
                     borderRadius: '50%',
-                    background: 'var(--accent)',
+                    background: '#ffffff',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center'
                   }}
                 >
-                  <Check size={10} color="#ffffff" strokeWidth={3} />
+                  <Check size={10} color="var(--accent)" strokeWidth={3.5} />
                 </div>
               )}
 
               {/* Mode Icon */}
               <div
                 style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '8px',
-                  background: isSelected ? 'var(--accent)' : 'rgba(255, 255, 255, 0.05)',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '10px',
+                  background: isSelected ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.04)',
                   color: isSelected ? '#ffffff' : isAvailable ? 'var(--text-secondary)' : 'var(--text-muted)',
                   display: 'flex',
                   alignItems: 'center',
@@ -164,7 +164,7 @@ export default function TransitModeSelector({ selectedMode = 'bus', onSelectMode
                   style={{
                     fontWeight: isSelected ? 700 : 600,
                     fontSize: '0.82rem',
-                    color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    color: isSelected ? '#ffffff' : 'var(--text-primary)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis'
@@ -176,13 +176,17 @@ export default function TransitModeSelector({ selectedMode = 'bus', onSelectMode
                 <div
                   style={{
                     fontSize: '0.66rem',
-                    color: !isAvailable ? '#f59e0b' : 'var(--text-muted)',
-                    marginTop: '1px',
+                    color: isSelected
+                      ? 'rgba(255, 255, 255, 0.85)'
+                      : !isAvailable
+                      ? '#f59e0b'
+                      : 'var(--text-muted)',
+                    marginTop: '2px',
                     lineHeight: 1.1,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    fontWeight: !isAvailable ? 600 : 400
+                    fontWeight: !isAvailable && !isSelected ? 600 : 400
                   }}
                 >
                   {!isAvailable ? 'None nearby' : mode.description}

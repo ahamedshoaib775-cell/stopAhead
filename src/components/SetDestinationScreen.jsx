@@ -326,8 +326,8 @@ export default function SetDestinationScreen({
       />
 
 
-      {/* Route Map Section with Floating Pill Overlay */}
-      <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)', position: 'relative', width: '100%', minHeight: '170px' }}>
+      {/* Route Map Section with Floating Badge Overlay */}
+      <div style={{ borderRadius: '18px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)', position: 'relative', width: '100%', minHeight: '170px' }}>
         {(selectedRoute?.distKm || isLoadingRoute || routeError) && (
           <div
             style={{
@@ -335,18 +335,18 @@ export default function SetDestinationScreen({
               top: 12,
               left: 12,
               zIndex: 20,
-              background: 'rgba(15, 23, 42, 0.85)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'rgba(11, 14, 20, 0.85)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
               borderRadius: '999px',
-              padding: '0.35rem 0.8rem',
+              padding: '0.35rem 0.85rem',
               fontSize: '0.78rem',
               fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
               gap: '0.4rem',
-              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4)'
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)'
             }}
           >
             {isLoadingRoute ? (
@@ -361,14 +361,6 @@ export default function SetDestinationScreen({
           </div>
         )}
 
-        {/* Visible Debug Coords Chip */}
-        {userLocation?.lat && (
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginBottom: '0.35rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.03)', padding: '0.25rem 0.55rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-            <span>📍 Map Center: {userLocation.lat.toFixed(4)}°N, {userLocation.lng.toFixed(4)}°E</span>
-            <span>Overpass: {searchedRadiusKm}km ({transportMode.toUpperCase()})</span>
-          </div>
-        )}
-
         <LeafletMap
           currentCoords={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : null}
           originCoords={selectedOriginStop ? [selectedOriginStop.lat, selectedOriginStop.lng] : null}
@@ -380,7 +372,6 @@ export default function SetDestinationScreen({
           height="170px"
           onExpandFullScreen={onExpandFullScreen}
         />
-
       </div>
 
       {/* Destination Stop Section */}
