@@ -63,18 +63,43 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
       const routePromises = modes.map(async (mode) => {
         try {
           // 1. Find nearest station near user & near destination
-          const [origRes, destRes, osmRouteRelations] = await Promise.all([
+          const [origRes, destRes] = await Promise.all([
             fetchNearestTransitStopToPoint(userLat, userLng, mode),
-            fetchNearestTransitStopToPoint(targetLat, targetLng, mode),
-            fetchOsmRouteRelationsBetweenPoints(userLat, userLng, targetLat, targetLng, mode, userLocation?.cityName, place.name)
+            fetchNearestTransitStopToPoint(targetLat, targetLng, mode)
           ]);
 
           if (!origRes?.nearestStop || !destRes?.nearestStop) return null;
 
-          // Exclude if station gap is extremely far (>6 km walk to station)
-          if (origRes.gapKm > 6 || destRes.gapKm > 6) return null;
+          // Exclude mode if walking gap is too far (>5 km walk to station)
+          if (origRes.gapKm > 5 || destRes.gapKm > 5) return null;
 
-          // 2. Fetch OSRM transit polyline & time
+          // 2. Fetch live OSM route relations or cross-reference verified reference route table
+          let osmRouteRelations = await fetchOsmRouteRelationsBetweenPoints(
+            userLat,
+            userLng,
+            targetLat,
+            targetLng,
+            mode,
+            userLocation?.cityName,
+            place.name
+          );
+
+          // Fallback cross-check against verified route engine if live OSM returns 0
+          if (!osmRouteRelations || osmRouteRelations.length === 0) {
+            const verifiedCheck = findAllRoutesServingDestination({
+              origin: origRes.nearestStop.name,
+              destination: destRes.nearestStop.name,
+              mode
+            });
+            if (verifiedCheck && verifiedCheck.directRoutes && verifiedCheck.directRoutes.length > 0) {
+              osmRouteRelations = verifiedCheck.directRoutes.map(r => ({
+                ref: r.routeNumber,
+                name: r.direction || `${mode.toUpperCase()} Route ${r.routeNumber}`
+              }));
+            }
+          }
+
+          // 3. Fetch OSRM transit polyline & time
           const osrmRes = await fetchOSRMRoute(
             origRes.nearestStop.lat,
             origRes.nearestStop.lng,
@@ -87,16 +112,20 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
           const walkDestMins = destRes.walkingMins || Math.max(1, Math.round((destRes.gapKm || 0.2) * 12));
           const transitMins = osrmRes?.durationMins || Math.max(2, Math.round((osrmRes?.distKm || 4) * 2.5));
           const totalMins = walkOriginMins + transitMins + walkDestMins;
+          const stopCount = Math.max(2, Math.round((osrmRes?.distKm || 3) * (mode === 'metro' ? 0.7 : 1.1)));
 
           return {
             mode,
             originStop: origRes.nearestStop,
             destStop: destRes.nearestStop,
+            origGapKm: origRes.gapKm || 0.2,
+            destGapKm: destRes.gapKm || 0.2,
             distKm: osrmRes?.distKm || 0,
             transitMins,
             walkOriginMins,
             walkDestMins,
             totalMins,
+            stopCount,
             osmRouteRelations
           };
         } catch (e) {
@@ -259,7 +288,7 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
         {isCalculating && (
           <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <Loader2 size={28} color="var(--accent)" className="spin-animation" style={{ margin: '0 auto 0.75rem auto' }} />
-            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>Comparing Bus, Metro, and Train routes...</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>Checking Bus, Metro, and Train routes...</div>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>Calculating door-to-door transit & walking times</div>
           </div>
         )}
@@ -269,33 +298,33 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
               Destination: <strong style={{ color: 'var(--text-primary)' }}>{selectedPlace.name}</strong>
+              {viableRoutes.length === 1 && (
+                <span style={{ color: 'var(--accent)', marginLeft: '0.4rem', fontWeight: 700 }}>• Direct transit option found</span>
+              )}
             </div>
 
             {viableRoutes.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {viableRoutes.map((route, index) => {
-                  const isFastest = index === 0;
+                  const isFastest = index === 0 && viableRoutes.length > 1;
                   const modeInfo = getTransitModeInfo(route.mode);
                   const ModeIcon = modeInfo.icon;
 
                   return (
                     <div
                       key={route.mode}
-                      onClick={() => handleStartChosenTrip(route)}
                       style={{
                         padding: '1rem',
                         borderRadius: '16px',
                         background: isFastest ? 'rgba(2, 90, 237, 0.12)' : 'rgba(255, 255, 255, 0.03)',
                         border: isFastest ? '1.5px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.08)',
-                        cursor: 'pointer',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '0.6rem',
-                        transition: 'all 0.15s ease',
                         position: 'relative'
                       }}
                     >
-                      {/* Fastest Badge */}
+                      {/* Fastest / Single Option Badge */}
                       {isFastest && (
                         <div
                           style={{
@@ -304,7 +333,7 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
                             color: '#ffffff',
                             fontSize: '0.7rem',
                             fontWeight: 800,
-                            padding: '0.2rem 0.6rem',
+                            padding: '0.2rem 0.65rem',
                             borderRadius: '999px',
                             display: 'flex',
                             alignItems: 'center',
@@ -312,27 +341,27 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
                           }}
                         >
                           <Sparkles size={11} />
-                          <span>RECOMMENDED (FASTEST)</span>
+                          <span>⚡ FASTEST — {route.totalMins} MINS TOTAL</span>
                         </div>
                       )}
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isFastest ? 'var(--accent)' : 'rgba(255,255,255,0.06)', color: isFastest ? '#ffffff' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <ModeIcon size={18} />
+                          <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: isFastest ? 'var(--accent)' : 'rgba(255,255,255,0.06)', color: isFastest ? '#ffffff' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <ModeIcon size={20} />
                           </div>
                           <div>
-                            <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>
+                            <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
                               {modeInfo.label}
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              Stop: {route.destStop.name}
+                              Board at: <strong style={{ color: 'var(--text-primary)' }}>{route.originStop.name}</strong> ({route.origGapKm} km away)
                             </div>
                           </div>
                         </div>
 
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: isFastest ? 'var(--accent)' : 'var(--text-primary)' }}>
+                          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: isFastest ? 'var(--accent)' : 'var(--text-primary)' }}>
                             {route.totalMins} min
                           </div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
@@ -342,20 +371,20 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
                       </div>
 
                       {/* Route Breakdown Timeline */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.2)', padding: '0.4rem 0.65rem', borderRadius: '8px' }}>
-                        <Footprints size={12} color="var(--text-muted)" />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.2)', padding: '0.45rem 0.65rem', borderRadius: '8px' }}>
+                        <Footprints size={13} color="var(--text-muted)" />
                         <span>Walk {route.walkOriginMins}m</span>
                         <span>•</span>
-                        <ModeIcon size={12} color="var(--accent)" />
-                        <span>Transit {route.transitMins}m ({route.distKm} km)</span>
+                        <ModeIcon size={13} color="var(--accent)" />
+                        <span>Transit {route.transitMins}m (~{route.stopCount} stops)</span>
                         <span>•</span>
-                        <Footprints size={12} color="var(--text-muted)" />
+                        <Footprints size={13} color="var(--text-muted)" />
                         <span>Walk {route.walkDestMins}m</span>
                       </div>
 
-                      {/* OSM Route Relation Number Badges */}
+                      {/* OSM Route Relation / Verified Reference Route Badges */}
                       {route.osmRouteRelations && route.osmRouteRelations.length > 0 ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', background: 'rgba(2, 90, 237, 0.15)', padding: '0.4rem 0.65rem', borderRadius: '8px', border: '1px solid rgba(2, 90, 237, 0.3)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', background: 'rgba(2, 90, 237, 0.15)', padding: '0.45rem 0.65rem', borderRadius: '8px', border: '1px solid rgba(2, 90, 237, 0.3)' }}>
                           <Tag size={13} color="var(--accent)" />
                           <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--accent)' }}>
                             Take {route.mode === 'metro' ? 'Metro' : route.mode === 'train' ? 'Train' : 'Bus'} {route.osmRouteRelations.map(r => r.ref).slice(0, 3).join(', ')}
@@ -365,26 +394,33 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
                           </span>
                         </div>
                       ) : (
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.2rem 0.4rem' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.1rem 0.3rem' }}>
                           Route number not mapped in OSM for this stop — confirm with driver/conductor
                         </div>
                       )}
 
-
-                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.2rem' }}>
-                        <span>Tap to start this trip</span>
-                        <ArrowRight size={14} />
-                      </div>
+                      {/* Start Trip CTA Button */}
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => handleStartChosenTrip(route)}
+                        style={{ marginTop: '0.3rem', padding: '0.65rem 1rem', fontSize: '0.85rem' }}
+                      >
+                        <MapPin size={16} />
+                        <span>Start this trip</span>
+                        <ArrowRight size={16} style={{ marginLeft: 'auto' }} />
+                      </button>
                     </div>
                   );
                 })}
               </div>
             ) : (
+              /* Honest Empty State for 0 Viable Modes */
               <div style={{ padding: '1.25rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.06)', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                <AlertTriangle size={22} color="#ef4444" style={{ marginBottom: '0.4rem' }} />
-                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>No direct transit coverage found</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  No bus, metro, or train station is within reasonable walking distance of {selectedPlace.name}. Try searching by station name directly.
+                <AlertTriangle size={24} color="#ef4444" style={{ margin: '0 auto 0.4rem auto' }} />
+                <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>No direct transit routes found</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: 1.45 }}>
+                  No direct transit routes found between your location and <strong>{selectedPlace.name}</strong>. Try a nearby landmark or check back as coverage improves.
                 </div>
               </div>
             )}
