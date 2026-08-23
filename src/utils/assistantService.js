@@ -1,5 +1,5 @@
 // assistantService.js - StopAhead AI Intelligent Multi-Modal Travel Assistant Engine
-import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints, getKnownChennaiLandmarkFallback } from './osmService';
+import { search_destination, searchPhotonPlaces, searchPhotonWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints, getKnownChennaiLandmarkFallback } from './osmService';
 import { calculateHaversineDistance } from './geoHelper';
 import { findAllRoutesServingDestination } from '../data/verifiedBusRoutes';
 import { findNearestMetroStation } from '../data/metroDataset.js';
@@ -258,7 +258,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
 
     if (destMatch && userLat && userLng) {
       const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
-      const searchRes = await searchNominatimWithBroadenedFallback(destMatch, locationBias).catch(() => ({ places: [] }));
+      const searchRes = await search_destination(destMatch, locationBias).catch(() => ({ places: [] }));
 
       if (searchRes.places && searchRes.places.length > 0) {
         const place = searchRes.places[0];
@@ -356,8 +356,8 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
   try {
     const locationBias = { lat: userLat, lng: userLng, delta: 0.40 };
 
-    // Search exact raw query first, retry with broadened search if 0 results
-    const searchResult = await searchNominatimWithBroadenedFallback(destQuery || rawQuery, locationBias).catch(() => ({ places: [] }));
+    // Search exact raw query first via Photon search_destination tool, retry with broadened search if 0 results
+    const searchResult = await search_destination(destQuery || rawQuery, locationBias).catch(() => ({ places: [] }));
     let places = searchResult.places;
 
     if (!places || places.length === 0) {

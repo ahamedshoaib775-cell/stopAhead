@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, AlertTriangle, Bookmark, Tag, Navigation } from 'lucide-react';
-import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
+import { searchPhotonPlaces, searchPhotonWithBroadenedFallback, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
 import { requestBrowserLocation } from '../utils/locationService';
 import { openGoogleMapsDirections } from '../utils/navigationHelper';
 import LocationPermissionModal from './LocationPermissionModal';
@@ -169,36 +169,50 @@ export default function SetDestinationScreen({
   }, [userLocation?.lat, userLocation?.lng, userLocation?.cityName, transportMode]);
 
 
-  // Location-Aware Nominatim Search across all place types (malls, stores, landmarks, addresses)
+  // Live Photon Geocoding Search with 300ms debounce and AbortController for stale request cancellation
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setOsmSearchResults([]);
       setBroadenedSearchNote(null);
+      setIsSearchingOsm(false);
       return;
     }
+
+    const abortController = new AbortController();
 
     const timer = setTimeout(async () => {
       setIsSearchingOsm(true);
       try {
         const locationBias = userLocation?.lat && userLocation?.lng ? {
           lat: userLocation.lat,
-          lng: userLocation.lng,
-          delta: 0.15, // ~15 km bounding box around user city
-          bounded: true
+          lng: userLocation.lng
         } : null;
 
-        const res = await searchNominatimWithBroadenedFallback(searchQuery, locationBias);
-        setOsmSearchResults(res.places || []);
-        setBroadenedSearchNote(res.isBroadened ? res.note : null);
+        const res = await searchPhotonWithBroadenedFallback(searchQuery, locationBias, { signal: abortController.signal });
+        if (!abortController.signal.aborted) {
+          setOsmSearchResults(res.places || []);
+          setBroadenedSearchNote(res.isBroadened ? res.note : null);
+        }
       } catch (e) {
-        console.warn('Nominatim search failed:', e);
+        if (e.name !== 'AbortError') {
+          console.warn('Photon search failed:', e);
+          if (!abortController.signal.aborted) {
+            setOsmSearchResults([]);
+          }
+        }
       } finally {
-        setIsSearchingOsm(false);
+        if (!abortController.signal.aborted) {
+          setIsSearchingOsm(false);
+        }
       }
-    }, 400);
+    }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      abortController.abort();
+    };
   }, [searchQuery, userLocation]);
+
 
 
   // Handle Location Permission Granting
@@ -528,7 +542,9 @@ export default function SetDestinationScreen({
                     }}
                   >
                     <div>
-                      <div style={{ fontWeight: isSelected ? 700 : 600 }}>{place.name}</div>
+                      <div style={{ fontWeight: isSelected ? 700 : 600 }}>
+                        {place.displayName || (place.city ? `${place.name} — ${place.city}` : place.name)}
+                      </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{place.description}</div>
                     </div>
                     {isSelected ? <Check size={16} color="var(--accent)" /> : <MapPin size={14} color="var(--text-muted)" />}

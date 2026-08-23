@@ -75,86 +75,100 @@ export function getKnownChennaiLandmarkFallback(query) {
 }
 
 /**
- * Nominatim Free Geocoding Search (OpenStreetMap)
- * Searches across ALL OSM place types (shops, malls, landmarks, addresses, businesses)
- * Biased/restricted to user's current city/area using viewbox
+ * Photon Free Geocoding API Search (Komoot / OpenStreetMap)
+ * Endpoint: https://photon.komoot.io/api/?q=SEARCH_TEXT&lat=USER_LAT&lon=USER_LNG&limit=5
+ * Supports proximity ranking via lat/lon parameters, typo-tolerant fuzzy matching, and fast response times.
  */
-export async function searchNominatimPlaces(query, locationBias = null) {
+export async function searchPhotonPlaces(query, locationBias = null, options = {}) {
   if (!query || !query.trim()) return [];
 
   const cleanQ = query.trim();
-  console.log(`[StopAhead Geocoding Request]: Searching Nominatim for "${cleanQ}"`);
+  console.log(`[StopAhead Photon Geocoding Request]: Searching Photon for "${cleanQ}"`);
 
   try {
-    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQ)}&limit=10&addressdetails=1`;
+    let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(cleanQ)}&limit=5`;
 
     if (locationBias && locationBias.lat && locationBias.lng) {
-      const delta = locationBias.delta || 0.40; // ~40 km wide city viewbox
-      const minLng = locationBias.lng - delta;
-      const maxLng = locationBias.lng + delta;
-      const minLat = locationBias.lat - delta;
-      const maxLat = locationBias.lat + delta;
-
-      url += `&viewbox=${minLng.toFixed(4)},${maxLat.toFixed(4)},${maxLng.toFixed(4)},${minLat.toFixed(4)}`;
-      // Do NOT set bounded=1 so city landmarks outside bounding box are not strictly dropped
+      url += `&lat=${locationBias.lat}&lon=${locationBias.lng}`;
     }
 
-    console.log(`[StopAhead Geocoding URL]: ${url}`);
+    console.log(`[StopAhead Photon URL]: ${url}`);
 
     const response = await fetchWithTimeout(url, {
+      signal: options.signal,
       headers: {
-        'Accept-Language': 'en',
-        'User-Agent': 'StopAheadTransitApp/2.0 (contact@stopahead.app)'
+        'Accept-Language': 'en'
       }
-    }, 4500);
+    }, 8500);
 
-    console.log(`[StopAhead Geocoding HTTP Status]: ${response.status} ${response.statusText}`);
+    console.log(`[StopAhead Photon HTTP Status]: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
-      throw new Error(`Nominatim API returned HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(`Photon API returned HTTP ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log(`[StopAhead Geocoding Raw Response]: ${data ? data.length : 0} items returned for "${cleanQ}"`);
+    const features = data && data.features ? data.features : [];
+    console.log(`[StopAhead Photon Raw Response]: ${features.length} items returned for "${cleanQ}"`);
 
-    if (data && data.length > 0) {
-      return data.map((item) => {
-        const mainName = item.name || item.display_name.split(',')[0];
-        const details = item.display_name.split(',').slice(1, 3).join(',').trim();
+    if (features.length > 0) {
+      return features.map((feature) => {
+        const props = feature.properties || {};
+        const coords = feature.geometry?.coordinates || [0, 0]; // GeoJSON format: [lng, lat]
+        const lng = parseFloat(coords[0]);
+        const lat = parseFloat(coords[1]);
+
+        const mainName = props.name || props.street || props.locality || cleanQ;
+        const city = props.city || props.town || props.district || props.locality || props.county || '';
+        const state = props.state || '';
+        const country = props.country || '';
+
+        const cityArea = city || state || country;
+        const description = [city, state].filter(Boolean).join(', ') || country || 'Place';
+        const displayName = cityArea ? `${mainName} — ${cityArea}` : mainName;
 
         return {
-          id: item.place_id ? String(item.place_id) : `osm-${item.lat}-${item.lon}`,
+          id: props.osm_id ? `photon-${props.osm_id}` : `photon-${lat}-${lng}`,
           name: mainName,
-          description: details || item.type || 'OpenStreetMap Place',
+          city: city,
+          state: state,
+          coordinates: coords, // [lng, lat]
+          description: description,
+          displayName: displayName,
           code: mainName.slice(0, 3).toUpperCase(),
-          lat: parseFloat(item.lat),
-          lng: parseFloat(item.lon),
-          type: item.type || item.class || 'place',
+          lat: lat,
+          lng: lng,
+          type: props.osm_value || props.type || 'place',
           isOsm: true,
-          isPlace: true
+          isPlace: true,
+          isPhoton: true
         };
       });
     }
   } catch (err) {
-    console.error(`[StopAhead Geocoding Exception] Search for "${cleanQ}" failed:`, err);
+    if (err.name === 'AbortError') {
+      console.log(`[StopAhead Photon Search Aborted] Query "${cleanQ}" cancelled for newer in-flight request`);
+      throw err;
+    }
+    console.error(`[StopAhead Photon Exception] Search for "${cleanQ}" failed:`, err);
   }
 
-  // Fallback to Known Landmark dataset if Nominatim fails or returns 0 results
+  // Fallback to Known Landmark dataset if Photon API fails or returns 0 results
   return getKnownChennaiLandmarkFallback(cleanQ);
 }
 
 
 /**
- * Search Nominatim with raw query first; if 0 results, retry with broadened query (stripping generic station/bus stop suffixes).
+ * Search Photon with raw query first; if 0 results, retry with broadened query (stripping generic transit suffixes).
  * Returns { places, isBroadened, broadenedQuery, note }
  */
-export async function searchNominatimWithBroadenedFallback(query, locationBias = null) {
+export async function searchPhotonWithBroadenedFallback(query, locationBias = null, options = {}) {
   if (!query || !query.trim()) return { places: [], isBroadened: false };
 
   const rawQuery = query.trim();
 
-  // 1. Direct search with exact raw query
-  let places = await searchNominatimPlaces(rawQuery, locationBias);
+  // 1. Direct search with exact raw query (no mangling)
+  let places = await searchPhotonPlaces(rawQuery, locationBias, options);
   if (places && places.length > 0) {
     return { places, isBroadened: false, query: rawQuery };
   }
@@ -164,7 +178,7 @@ export async function searchNominatimWithBroadenedFallback(query, locationBias =
   if (genericSuffixRegex.test(rawQuery)) {
     const broadenedQuery = rawQuery.replace(genericSuffixRegex, '').trim();
     if (broadenedQuery && broadenedQuery.length >= 2) {
-      const broadenedPlaces = await searchNominatimPlaces(broadenedQuery, locationBias);
+      const broadenedPlaces = await searchPhotonPlaces(broadenedQuery, locationBias, options);
       if (broadenedPlaces && broadenedPlaces.length > 0) {
         return {
           places: broadenedPlaces,
@@ -178,7 +192,7 @@ export async function searchNominatimWithBroadenedFallback(query, locationBias =
 
   // 3. Fallback: try raw query without location bias (if location bias was active)
   if (locationBias) {
-    const globalPlaces = await searchNominatimPlaces(rawQuery, null);
+    const globalPlaces = await searchPhotonPlaces(rawQuery, null, options);
     if (globalPlaces && globalPlaces.length > 0) {
       return { places: globalPlaces, isBroadened: false, query: rawQuery };
     }
@@ -186,6 +200,12 @@ export async function searchNominatimWithBroadenedFallback(query, locationBias =
 
   return { places: [], isBroadened: false, query: rawQuery };
 }
+
+// AI Chatbot's search_destination tool & backward compatibility exports
+export const search_destination = searchPhotonWithBroadenedFallback;
+export const searchNominatimPlaces = searchPhotonPlaces;
+export const searchNominatimWithBroadenedFallback = searchPhotonWithBroadenedFallback;
+
 
 
 const OVERPASS_CACHE = new Map();
