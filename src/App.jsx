@@ -28,7 +28,7 @@ import DemoInvestorScreen from './components/DemoInvestorScreen';
 
 
 import { supabase } from './utils/supabaseClient';
-import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports } from './utils/dbService';
+import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports, syncUserProfile } from './utils/dbService';
 import { calculateHaversineDistance, calculateBearing } from './utils/geoHelper';
 import { fetchOSRMRoute, reverseGeocodeLocation } from './utils/osmService';
 import { requestBrowserLocation } from './utils/locationService';
@@ -179,6 +179,7 @@ export default function App() {
   // Fetch DB data whenever logged-in user changes (Strict User Isolation)
   useEffect(() => {
     if (user?.id) {
+      syncUserProfile(user);
       fetchUserSavedRoutes(user.id).then(setSavedRoutes);
       fetchUserTripHistory(user.id).then(setTripHistory);
     } else {

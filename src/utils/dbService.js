@@ -550,6 +550,59 @@ export async function deleteChatMessagesAfter(conversationId, targetMessageId) {
   return { success: true };
 }
 
+/**
+ * Synchronize user profile into 'users' or 'profiles' table with LocalStorage fallback
+ */
+export async function syncUserProfile(user, profileData = {}) {
+  if (!user || !user.id) return null;
+
+  const profileRecord = {
+    id: user.id,
+    first_name: profileData.first_name || profileData.firstName || user.user_metadata?.first_name || user.user_metadata?.full_name?.split(' ')[0] || '',
+    last_name: profileData.last_name || profileData.lastName || user.user_metadata?.last_name || user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+    email: user.email || profileData.email || null,
+    phone: user.phone || profileData.phone || null,
+    created_at: user.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  const localKey = `stopahead_user_profile_${user.id}`;
+  try {
+    localStorage.setItem(localKey, JSON.stringify(profileRecord));
+  } catch (e) {}
+
+  // 1. Try upserting to 'users' table
+  if (!missingTables.has('users')) {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .upsert(profileRecord, { onConflict: 'id' });
+
+      if (!error) return profileRecord;
+      if (isMissingTableError(error)) missingTables.add('users');
+    } catch (err) {
+      missingTables.add('users');
+    }
+  }
+
+  // 2. Try upserting to 'profiles' table alias
+  if (!missingTables.has('profiles')) {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert(profileRecord, { onConflict: 'id' });
+
+      if (!error) return profileRecord;
+      if (isMissingTableError(error)) missingTables.add('profiles');
+    } catch (err) {
+      missingTables.add('profiles');
+    }
+  }
+
+  return profileRecord;
+}
+
+
 
 
 
