@@ -1,107 +1,124 @@
-// AuthScreen.jsx - StopAhead Magic Link Authentication Flow
-import React, { useState, useEffect } from 'react';
-import { Mail, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, RefreshCw, Edit3, MailCheck } from 'lucide-react';
+// AuthScreen.jsx - Supabase Authentication (Sign In & Sign Up) component
+import React, { useState } from 'react';
+import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 
 export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
-  // Navigation & Flow state
-  const [authMode, setAuthMode] = useState('signup'); // 'signup' | 'login'
-  const [step, setStep] = useState(1); // 1: Input Form, 2: Magic Link Sent Confirmation
-
-  // Form Input States
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [fullName, setFullName] = useState('');
 
-  // UI Feedback States
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-
-  // Resend Cooldown Timer (45 seconds)
-  const [cooldown, setCooldown] = useState(0);
-
-  useEffect(() => {
-    let timer;
-    if (cooldown > 0) {
-      timer = setInterval(() => {
-        setCooldown((prev) => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [cooldown]);
+  const [showForgotPrompt, setShowForgotPrompt] = useState(false);
 
   // Email format validation helper
-  const isValidEmail = (str) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str.trim());
+  const isValidEmail = (str) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
 
-  // Masking helper for privacy on confirmation screen
-  const getMaskedEmail = () => {
-    const parts = email.trim().split('@');
-    if (parts.length !== 2) return email;
-    const name = parts[0];
-    const maskedName = name.length > 2 ? `${name[0]}***${name[name.length - 1]}` : `${name[0]}***`;
-    return `${maskedName}@${parts[1]}`;
-  };
-
-  // Step 1 Submit: Validate & Trigger Magic Link via Supabase Auth
-  const handleSendMagicLink = async (e) => {
-    if (e) e.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
 
     const trimmedEmail = email.trim();
 
-    // 1. Name validation for Signup
-    if (authMode === 'signup') {
-      if (!firstName.trim()) {
-        setErrorMessage('Please enter your first name.');
-        return;
-      }
-      if (!lastName.trim()) {
-        setErrorMessage('Please enter your last name.');
-        return;
-      }
-    }
-
-    // 2. Email format validation
+    // Validation checks
     if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
       setErrorMessage('Please enter a valid email address.');
       return;
     }
 
+    if (!password || password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (isSignUp) {
+      if (!fullName.trim()) {
+        setErrorMessage('Please enter your full name.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setErrorMessage('Passwords do not match. Please check and try again.');
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     try {
-      console.log(`[StopAhead Auth] Sending Magic Link to ${trimmedEmail}...`);
-      const { error } = await supabase.auth.signInWithOtp({
-        email: trimmedEmail,
-        options: {
-          emailRedirectTo: window.location.origin,
-          data: {
-            first_name: firstName.trim(),
-            last_name: lastName.trim()
+      if (isSignUp) {
+        // Supabase Sign Up
+        const { data, error } = await supabase.auth.signUp({
+          email: trimmedEmail,
+          password,
+          options: {
+            data: {
+              full_name: fullName.trim()
+            }
+          }
+        });
+
+        if (error) {
+          if (error.message.toLowerCase().includes('already registered')) {
+            setErrorMessage('This email address is already registered. Switch to Sign In below.');
+          } else {
+            setErrorMessage(error.message || 'Failed to create account.');
+          }
+        } else if (data?.user) {
+          setSuccessMessage('Account created successfully!');
+          if (data.session) {
+            onAuthSuccess(data.user, data.session);
+          } else {
+            setSuccessMessage('Account created! Please check your email to confirm registration or log in now.');
           }
         }
-      });
-
-      if (error) {
-        console.warn('[StopAhead Magic Link Error]:', error);
-        const msg = error.message || '';
-        if (msg.toLowerCase().includes('rate limit') || error?.status === 429) {
-          setErrorMessage('Supabase security rate limit reached. Please wait 60 seconds before requesting another email link.');
-          setCooldown(60);
-        } else {
-          setErrorMessage(msg || 'Could not send sign-in link. Please check your email address.');
-        }
       } else {
-        console.log('[StopAhead Auth] Magic Link Sent Successfully!');
-        setSuccessMessage(`Sign-in link sent to ${getMaskedEmail()}`);
-        setStep(2);
-        setCooldown(60);
+        // Supabase Sign In
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: trimmedEmail,
+          password
+        });
+
+        if (error) {
+          if (error.message.toLowerCase().includes('invalid login credentials')) {
+            setErrorMessage('Incorrect email or password. Please try again.');
+          } else {
+            setErrorMessage(error.message || 'Login failed. Please check your details.');
+          }
+        } else if (data?.user && data?.session) {
+          onAuthSuccess(data.user, data.session);
+        }
       }
     } catch (err) {
-      console.error('[StopAhead Auth Exception]:', err);
-      setErrorMessage('An unexpected network error occurred. Please try again.');
+      console.error('Authentication error:', err);
+      setErrorMessage('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim() || !isValidEmail(email.trim())) {
+      setErrorMessage('Enter your registered email address above first.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+      if (error) {
+        setErrorMessage(error.message);
+      } else {
+        setSuccessMessage('Password reset instructions sent to your email.');
+        setShowForgotPrompt(false);
+      }
+    } catch (e) {
+      setErrorMessage('Could not process password reset.');
     } finally {
       setIsLoading(false);
     }
@@ -114,25 +131,24 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: '85vh',
-        padding: '1.25rem 0',
-        color: 'var(--text-primary)'
+        minHeight: '80vh',
+        padding: '1rem 0'
       }}
     >
-      {/* Brand Header with Official StopAhead Logo */}
-      <div style={{ textAlign: 'center', marginBottom: '1.5rem', width: '100%', maxWidth: '380px' }}>
+      {/* Brand Header with Official Full StopAhead Logo */}
+      <div style={{ textAlign: 'center', marginBottom: '1.5rem', width: '100%', maxWidth: '340px' }}>
         <div
           style={{
-            background: 'var(--bg-card)',
-            padding: '1.4rem 1.25rem 1.25rem 1.25rem',
+            background: '#ffffff',
+            padding: '1.5rem 1.25rem 1.25rem 1.25rem',
             borderRadius: '24px',
-            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.3)',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.35)',
             display: 'inline-flex',
             justifyContent: 'center',
             alignItems: 'center',
             margin: '0 auto 1rem auto',
             width: '100%',
-            border: '1px solid var(--border-color)'
+            maxWidth: '280px'
           }}
         >
           <img
@@ -140,339 +156,326 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
             alt="StopAhead - Never Miss Your Stop"
             style={{
               width: '100%',
-              maxWidth: '240px',
+              maxWidth: '220px',
               height: 'auto',
               objectFit: 'contain',
               display: 'block'
             }}
           />
         </div>
-
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-          {step === 2
-            ? 'Check Your Email'
-            : authMode === 'signup'
-            ? 'Create your StopAhead Account'
-            : 'Welcome Back'}
-        </h1>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0.35rem 0 0 0' }}>
-          {step === 2
-            ? `We sent a magic sign-in link to ${getMaskedEmail()}`
-            : authMode === 'signup'
-            ? 'Sign up with instant magic link authentication'
-            : 'Enter your email address to receive a magic sign-in link'}
+        <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+          {isSignUp ? 'Create your personal account' : 'Sign in to access your saved transit routes'}
         </p>
       </div>
 
-      {/* Main Authentication Card */}
+      {/* Main Auth Form Card */}
       <div
+        className="quiet-card"
         style={{
+          maxWidth: '400px',
           width: '100%',
-          maxWidth: '380px',
-          background: 'var(--bg-card)',
-          borderRadius: '24px',
+          padding: '1.75rem 1.5rem',
+          borderRadius: 'var(--radius-xl)',
+          background: 'var(--bg-surface)',
           border: '1px solid var(--border-color)',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)',
-          padding: '1.5rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1.1rem'
+          boxShadow: 'var(--shadow-subtle)'
         }}
       >
-        {/* Step 1: Sign Up / Sign In Form */}
-        {step === 1 && (
-          <form onSubmit={handleSendMagicLink} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            
-            {/* Mode Switcher Tabs (Sign Up vs Sign In) */}
-            <div style={{ display: 'flex', background: 'var(--bg-surface)', borderRadius: '12px', padding: '0.25rem', border: '1px solid var(--border-color)' }}>
-              <button
-                type="button"
-                onClick={() => { setAuthMode('signup'); setErrorMessage(''); }}
-                style={{
-                  flex: 1,
-                  padding: '0.55rem',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: authMode === 'signup' ? 'var(--bg-card)' : 'transparent',
-                  color: authMode === 'signup' ? 'var(--accent)' : 'var(--text-secondary)',
-                  fontWeight: 800,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  boxShadow: authMode === 'signup' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                Sign Up
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode('login'); setErrorMessage(''); }}
-                style={{
-                  flex: 1,
-                  padding: '0.55rem',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: authMode === 'login' ? 'var(--bg-card)' : 'transparent',
-                  color: authMode === 'login' ? 'var(--accent)' : 'var(--text-secondary)',
-                  fontWeight: 800,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  boxShadow: authMode === 'login' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                Sign In
-              </button>
-            </div>
+        {/* Sign In / Sign Up Mode Switch Tabs */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '0.4rem',
+            marginBottom: '1.5rem',
+            background: 'rgba(0, 0, 0, 0.25)',
+            padding: '0.25rem',
+            borderRadius: 'var(--radius-md)'
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp(false);
+              setErrorMessage('');
+              setSuccessMessage('');
+            }}
+            style={{
+              padding: '0.6rem',
+              borderRadius: 'var(--radius-sm)',
+              background: !isSignUp ? 'var(--accent)' : 'transparent',
+              color: !isSignUp ? '#000' : 'var(--text-secondary)',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp(true);
+              setErrorMessage('');
+              setSuccessMessage('');
+            }}
+            style={{
+              padding: '0.6rem',
+              borderRadius: 'var(--radius-sm)',
+              background: isSignUp ? 'var(--accent)' : 'transparent',
+              color: isSignUp ? '#000' : 'var(--text-secondary)',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            Create Account
+          </button>
+        </div>
 
-            {/* Name Fields (First Name & Last Name) - Shown for Sign Up */}
-            {authMode === 'signup' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: '0.35rem', display: 'block' }}>
-                    First Name *
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <User size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 13 }} />
-                    <input
-                      type="text"
-                      placeholder="Shoaib"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      required
-                      style={{
-                        width: '100%',
-                        padding: '0.7rem 0.75rem 0.7rem 2.3rem',
-                        borderRadius: '12px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-surface)',
-                        fontSize: '0.88rem',
-                        outline: 'none',
-                        color: 'var(--text-primary)'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: '0.35rem', display: 'block' }}>
-                    Last Name *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ahamed"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '0.7rem 0.75rem',
-                      borderRadius: '12px',
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-surface)',
-                      fontSize: '0.88rem',
-                      outline: 'none',
-                      color: 'var(--text-primary)'
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Email Address Input */}
-            <div>
-              <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: '0.35rem', display: 'block' }}>
-                Email Address *
-              </label>
-              <div style={{ position: 'relative' }}>
-                <Mail size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 14 }} />
-                <input
-                  type="email"
-                  placeholder="e.g. shoaib@stopahead.app"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem 0.75rem 2.5rem',
-                    borderRadius: '12px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-surface)',
-                    fontSize: '0.9rem',
-                    outline: 'none',
-                    color: 'var(--text-primary)'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Error Feedback Message */}
-            {errorMessage && (
-              <div
-                style={{
-                  padding: '0.75rem 0.9rem',
-                  borderRadius: '12px',
-                  background: 'rgba(239, 68, 68, 0.08)',
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
-                  color: '#dc2626',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '0.45rem',
-                  lineHeight: 1.4
-                }}
-              >
-                <AlertCircle size={16} style={{ marginTop: '2px', flexShrink: 0 }} />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            {/* Submit Send Magic Link Button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              style={{
-                width: '100%',
-                padding: '0.85rem 1rem',
-                borderRadius: '14px',
-                background: '#025AED',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 800,
-                fontSize: '0.95rem',
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
-                boxShadow: '0 4px 14px rgba(2, 90, 237, 0.35)',
-                opacity: isLoading ? 0.75 : 1,
-                marginTop: '0.3rem'
-              }}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 size={18} className="spin" />
-                  <span>Sending Magic Link...</span>
-                </>
-              ) : (
-                <>
-                  <span>Send Magic Link</span>
-                  <ArrowRight size={18} />
-                </>
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* Step 2: Magic Link Sent Confirmation Screen */}
-        {step === 2 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', textAlign: 'center', padding: '0.5rem 0' }}>
-            <div
-              style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                background: 'rgba(2, 90, 237, 0.1)',
-                color: '#025AED',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto'
-              }}
-            >
-              <MailCheck size={32} />
-            </div>
-
-            <div>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.4rem 0' }}>
-                Magic Link Dispatched!
-              </h3>
-              <p style={{ fontSize: '0.88rem', color: '#475569', margin: 0, lineHeight: 1.5 }}>
-                We sent an instant sign-in link to <strong>{email.trim()}</strong>. Open your email inbox and tap the link to complete authentication.
-              </p>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: '14px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>
-                Sent to: <strong>{getMaskedEmail()}</strong>
-              </span>
-
-              <button
-                type="button"
-                onClick={() => { setStep(1); setErrorMessage(''); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#025AED',
-                  fontWeight: 800,
-                  fontSize: '0.78rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem'
-                }}
-              >
-                <Edit3 size={14} />
-                <span>Edit</span>
-              </button>
-            </div>
-
-            {/* Resend Link with Cooldown Timer */}
-            <div>
-              {cooldown > 0 ? (
-                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
-                  Resend magic link in <strong>{cooldown}s</strong>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSendMagicLink}
-                  disabled={isLoading}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#025AED',
-                    fontWeight: 800,
-                    fontSize: '0.84rem',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem'
-                  }}
-                >
-                  <RefreshCw size={14} />
-                  <span>Resend Magic Link</span>
-                </button>
-              )}
-            </div>
+        {/* Error Alert */}
+        {errorMessage && (
+          <div
+            style={{
+              padding: '0.75rem',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(255, 82, 82, 0.12)',
+              border: '1px solid rgba(255, 82, 82, 0.3)',
+              color: '#ff5252',
+              fontSize: '0.82rem',
+              marginBottom: '1.25rem',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.5rem',
+              lineHeight: 1.4
+            }}
+          >
+            <AlertCircle size={16} style={{ marginTop: '2px', flexShrink: 0 }} />
+            <span>{errorMessage}</span>
           </div>
         )}
 
-        {/* Divider line */}
-        <div style={{ height: '1px', background: '#e2e8f0', margin: '0.2rem 0' }} />
+        {/* Success Alert */}
+        {successMessage && (
+          <div
+            style={{
+              padding: '0.75rem',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              color: '#10b981',
+              fontSize: '0.82rem',
+              marginBottom: '1.25rem',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.5rem',
+              lineHeight: 1.4
+            }}
+          >
+            <CheckCircle2 size={16} style={{ marginTop: '2px', flexShrink: 0 }} />
+            <span>{successMessage}</span>
+          </div>
+        )}
 
-        {/* Guest Mode Action Button */}
-        <button
-          type="button"
-          onClick={onContinueAsGuest}
-          style={{
-            width: '100%',
-            padding: '0.65rem',
-            borderRadius: '12px',
-            background: 'transparent',
-            color: '#64748b',
-            border: '1px solid #cbd5e1',
-            fontWeight: 700,
-            fontSize: '0.85rem',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease'
-          }}
-        >
-          Continue as Guest
-        </button>
+        {/* Auth Input Form */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {isSignUp && (
+            <div>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                FULL NAME
+              </label>
+              <div style={{ position: 'relative' }}>
+                <User size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
+                <input
+                  type="text"
+                  placeholder="e.g. Alex Morgan"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.9rem',
+                    outline: 'none'
+                  }}
+                  required={isSignUp}
+                />
+              </div>
+            </div>
+          )}
 
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+              EMAIL ADDRESS
+            </label>
+            <div style={{ position: 'relative' }}>
+              <Mail size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(0, 0, 0, 0.25)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.9rem',
+                  outline: 'none'
+                }}
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                PASSWORD
+              </label>
+              {!isSignUp && (
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPrompt(!showForgotPrompt)}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                >
+                  Forgot password?
+                </button>
+              )}
+            </div>
+            <div style={{ position: 'relative' }}>
+              <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(0, 0, 0, 0.25)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.9rem',
+                  outline: 'none'
+                }}
+                required
+              />
+            </div>
+          </div>
+
+          {isSignUp && (
+            <div>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                CONFIRM PASSWORD
+              </label>
+              <div style={{ position: 'relative' }}>
+                <KeyRound size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.9rem',
+                    outline: 'none'
+                  }}
+                  required={isSignUp}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Submit CTA Button */}
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={isLoading}
+            style={{ width: '100%', padding: '0.85rem', marginTop: '0.5rem', opacity: isLoading ? 0.7 : 1 }}
+            id="btn-auth-submit"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 size={18} className="spin" />
+                <span>{isSignUp ? 'Creating Account...' : 'Signing In...'}</span>
+              </>
+            ) : (
+              <>
+                <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+                <ArrowRight size={18} style={{ marginLeft: 'auto' }} />
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* Forgot Password Actions Prompt */}
+        {showForgotPrompt && !isSignUp && (
+          <div
+            style={{
+              marginTop: '1rem',
+              padding: '0.85rem',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(0, 229, 255, 0.06)',
+              border: '1px solid rgba(0, 229, 255, 0.2)',
+              textAlign: 'center'
+            }}
+          >
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
+              Send password reset link to <strong style={{ color: 'var(--text-primary)' }}>{email || 'your email'}</strong>?
+            </div>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleForgotPassword}
+              style={{ fontSize: '0.78rem', padding: '0.45rem 0.8rem', width: '100%' }}
+            >
+              Send Reset Link
+            </button>
+          </div>
+        )}
+
+        {/* Continue as Guest Actions Prompt */}
+        {onContinueAsGuest && (
+          <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={onContinueAsGuest}
+              style={{
+                background: 'rgba(2, 90, 237, 0.12)',
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--radius-md)',
+                color: 'var(--accent)',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                padding: '0.65rem 1rem',
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem'
+              }}
+              id="btn-continue-guest"
+            >
+              <span>Continue as Guest (Explore Map & Transit)</span>
+              <ArrowRight size={15} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

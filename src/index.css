@@ -1,21 +1,21 @@
 /* index.css - StopAhead: Minimal & Calm Design System */
 
 :root {
-  /* Original Sleek Dark Theme (DEFAULT) */
-  --bg-primary: #0b0e14;
-  --bg-surface: #0f141f;
-  --bg-card: #151c28;
-  --bg-card-hover: #1c2536;
-  --border-color: rgba(255, 255, 255, 0.08);
+  /* Quiet Neutral Light Theme (DEFAULT) */
+  --bg-primary: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-card: #f1f5f9;
+  --bg-card-hover: #e2e8f0;
+  --border-color: rgba(0, 0, 0, 0.08);
   --border-active: rgba(2, 90, 237, 0.5);
 
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
   --text-muted: #64748b;
 
   /* OFFICIAL STOPAHEAD LOGO CORE COLOR PALETTE */
   --accent: #025AED;               /* Logo Blue Pin */
-  --accent-glow: rgba(2, 90, 237, 0.3);
+  --accent-glow: rgba(2, 90, 237, 0.2);
   --accent-text: #ffffff;
 
   --color-success: #16A34A;        /* Logo Signal Green Wave */
@@ -31,7 +31,7 @@
   --radius-xl: 28px;
   --radius-full: 9999px;
 
-  --shadow-subtle: 0 8px 30px rgba(0, 0, 0, 0.4);
+  --shadow-subtle: 0 8px 30px rgba(0, 0, 0, 0.08);
   --shadow-accent: 0 4px 20px var(--accent-glow);
   
   --app-max-width: 440px;

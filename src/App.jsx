@@ -15,20 +15,10 @@ import CommunityDisruptionModal from './components/CommunityDisruptionModal';
 import StopReportModal from './components/StopReportModal';
 import ChatbotModal from './components/ChatbotModal';
 import BestWayThereModal from './components/BestWayThereModal';
-import RouteSearchScreen from './components/RouteSearchScreen';
-import MapViewScreen from './components/MapViewScreen';
-import RouteDetailScreen from './components/RouteDetailScreen';
-import StopDetailScreen from './components/StopDetailScreen';
-import SetAlertScreen from './components/SetAlertScreen';
-import MyAlertsScreen from './components/MyAlertsScreen';
-import FavoritesScreen from './components/FavoritesScreen';
-import ProfileScreen from './components/ProfileScreen';
-import DemoInvestorScreen from './components/DemoInvestorScreen';
-import OtpSuccessAnimation from './components/OtpSuccessAnimation';
 
 
 import { supabase } from './utils/supabaseClient';
-import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports, syncUserProfile } from './utils/dbService';
+import { fetchUserSavedRoutes, saveUserRoute, deleteUserRoute, fetchUserTripHistory, recordTripHistory, fetchDelayReports } from './utils/dbService';
 import { calculateHaversineDistance, calculateBearing } from './utils/geoHelper';
 import { fetchOSRMRoute, reverseGeocodeLocation } from './utils/osmService';
 import { requestBrowserLocation } from './utils/locationService';
@@ -41,39 +31,10 @@ import { Loader2, Bot, MessageSquare } from 'lucide-react';
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
 
-  // URL Path listener for standalone investor pitch demo (/demo or #demo)
-  const isDemoUrl = typeof window !== 'undefined' && (
-    window.location.pathname === '/demo' ||
-    window.location.pathname.startsWith('/demo') ||
-    window.location.hash === '#demo' ||
-    window.location.hash === '#/demo'
-  );
-
-  const [currentPath, setCurrentPath] = useState(() => isDemoUrl ? '/demo' : window.location.pathname);
-
-  useEffect(() => {
-    const handleUrlChange = () => {
-      const isDemo = window.location.pathname === '/demo' ||
-        window.location.pathname.startsWith('/demo') ||
-        window.location.hash === '#demo' ||
-        window.location.hash === '#/demo';
-      if (isDemo) {
-        setCurrentPath('/demo');
-      }
-    };
-    window.addEventListener('popstate', handleUrlChange);
-    window.addEventListener('hashchange', handleUrlChange);
-    return () => {
-      window.removeEventListener('popstate', handleUrlChange);
-      window.removeEventListener('hashchange', handleUrlChange);
-    };
-  }, []);
-
   // Supabase Authentication State
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [showAuthSuccessAnimation, setShowAuthSuccessAnimation] = useState(false);
 
   // User-Scoped Database State
   const [savedRoutes, setSavedRoutes] = useState([]);
@@ -100,7 +61,7 @@ export default function App() {
       alertSound: 'chime',
       defaultThresholdType: 'stops',
       defaultThresholdValue: 2,
-      themeMode: 'dark',
+      themeMode: 'light',
       isHighContrast: false,
       fontSizeScale: 'standard',
       gpsMode: 'simulated',
@@ -157,12 +118,8 @@ export default function App() {
           }
         });
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
         if (isMounted) {
-          if (event === 'SIGNED_IN' && currentSession?.user) {
-            console.log('[StopAhead Auth] User authenticated via Magic Link! Triggering success animation...');
-            setShowAuthSuccessAnimation(true);
-          }
           setSession(currentSession);
           setUser(currentSession?.user ?? null);
           setAuthLoading(false);
@@ -184,7 +141,6 @@ export default function App() {
   // Fetch DB data whenever logged-in user changes (Strict User Isolation)
   useEffect(() => {
     if (user?.id) {
-      syncUserProfile(user);
       fetchUserSavedRoutes(user.id).then(setSavedRoutes);
       fetchUserTripHistory(user.id).then(setTripHistory);
     } else {
@@ -222,11 +178,6 @@ export default function App() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lng, heading: rawHeading } = pos.coords;
-
-        if (typeof window !== 'undefined') {
-          window.stopAheadUserLocation = { lat, lng };
-          window.stopAheadUserPosition = { lat, lng };
-        }
 
         setUserPosition((prev) => {
           let computedHeading = rawHeading;
@@ -297,26 +248,16 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    console.log('[StopAhead Auth] Logging out user...');
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.warn('[StopAhead Auth] Notice signing out from Supabase:', err);
-    } finally {
-      setUser(null);
-      setSession(null);
-      setActiveTrip(null);
-      setSavedRoutes([]);
-      setTripHistory([]);
-      setIsGuestMode(false);
-      localStorage.removeItem('stopahead_guest_mode');
-      setActiveTab('home');
-      console.log('[StopAhead Auth] Log out complete. Returned to AuthScreen.');
-    }
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setActiveTrip(null);
+    setSavedRoutes([]);
+    setTripHistory([]);
   };
 
   // Initialize & Start a Trip
-  const startTrip = async (originStop, destinationStop, thresholdType, thresholdValue, soundId, transportMode = 'bus', isSimulated = false) => {
+  const startTrip = async (originStop, destinationStop, thresholdType, thresholdValue, soundId, transportMode = 'bus') => {
     if (!destinationStop) {
       console.warn('[StopAhead] Cannot start trip: Destination stop is null or undefined.');
       return;
@@ -329,7 +270,7 @@ export default function App() {
       lng: userLocation?.lng || (destinationStop.lng - 0.015)
     };
 
-    console.log('[StopAhead] Starting trip initialization. Mode:', transportMode, 'IsSimulated:', isSimulated);
+    console.log('[StopAhead] Starting trip initialization. Mode:', transportMode);
     console.log('[StopAhead Alarm] State transition: idle (New Trip Initialized)');
 
     const distKm = calculateHaversineDistance(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng) || 2.5;
@@ -338,7 +279,6 @@ export default function App() {
 
     // Construct initial trip state
     const initialTrip = {
-      isSimulated: !!isSimulated,
       originStop: origin,
       destinationStop,
       transportMode: transportMode || 'bus',
@@ -368,7 +308,7 @@ export default function App() {
 
     setActiveTrip(initialTrip);
     setShowArrivalModal(false);
-    setIsSimulating(!!isSimulated);
+    setIsSimulating(true);
     setActiveTab('active-trip');
     triggerVibration('tap');
 
@@ -507,7 +447,7 @@ export default function App() {
 
         const isTripFinished = nextPointIdx >= totalPoints - 1 || newDistLeft <= 0.1;
 
-        if (isTripFinished && user?.id && !prev.isSimulated) {
+        if (isTripFinished && user?.id) {
           recordTripHistory(user.id, prev).then(() => {
             fetchUserTripHistory(user.id).then(setTripHistory);
           });
@@ -528,7 +468,7 @@ export default function App() {
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [activeTrip, activeTrip?.status, activeTrip?.alarmState, isSimulating, simSpeed, user?.id, settings.voiceAlertsEnabled, settings.language, userLocation?.lat, userLocation?.lng]);
+  }, [activeTrip?.status, activeTrip?.alarmState, isSimulating, simSpeed, user?.id]);
 
   // Handle Manual Dismiss Alarm Action (Immediate Kill Switch)
   const handleDismissAlarm = () => {
@@ -704,11 +644,6 @@ export default function App() {
     );
   }
 
-  // Standalone Investor Pitch Demo Route (/demo or #demo) - No Login / Auth Guard Required
-  if (currentPath === '/demo' || activeTab === 'demo') {
-    return <DemoInvestorScreen />;
-  }
-
   // 2. Auth Guard: Unauthenticated Users see AuthScreen (unless Guest Mode active)
   if (!user && !isGuestMode) {
     return (
@@ -730,11 +665,6 @@ export default function App() {
   // 3. Main Authenticated Application Views
   return (
     <div className="app-wrapper">
-      {/* Full-Screen Branded Success Celebration Animation on Magic Link Authentication */}
-      {showAuthSuccessAnimation && (
-        <OtpSuccessAnimation onComplete={() => setShowAuthSuccessAnimation(false)} />
-      )}
-
       {/* Top Header */}
       <Header
         activeTrip={activeTrip}
@@ -748,74 +678,17 @@ export default function App() {
       <main className="main-content">
         {activeTab === 'home' && (
           <HomeScreen
-            userLocation={userLocation}
             activeTrip={activeTrip}
             savedRoutes={savedRoutes}
             tripHistory={tripHistory}
             onStartTrip={startTrip}
             onDeleteSavedRoute={handleDeleteSavedRoute}
             onNavigate={setActiveTab}
-            user={user}
+            onExpandFullScreen={() => setIsFullScreenMapOpen(true)}
+            onOpenBestWayThere={() => setIsBestWayThereOpen(true)}
           />
         )}
 
-        {activeTab === 'search' && (
-          <RouteSearchScreen
-            onNavigate={setActiveTab}
-            onSelectRoute={(routeNo) => setActiveTab('route-detail')}
-          />
-        )}
-
-        {activeTab === 'map' && (
-          <MapViewScreen
-            userLocation={userLocation}
-            onNavigate={setActiveTab}
-            onSelectStop={(stopName) => setActiveTab('stop-detail')}
-          />
-        )}
-
-        {activeTab === 'alerts' && (
-          <MyAlertsScreen
-            onNavigate={setActiveTab}
-          />
-        )}
-
-        {activeTab === 'profile' && (
-          <ProfileScreen
-            user={user}
-            onSignOut={handleSignOut}
-            onNavigate={setActiveTab}
-          />
-        )}
-
-        {activeTab === 'route-detail' && (
-          <RouteDetailScreen
-            routeNo="21G"
-            routeName="Tambaram ↔ Broadway"
-            onNavigate={setActiveTab}
-            onSelectStop={(stopName) => setActiveTab('stop-detail')}
-          />
-        )}
-
-        {activeTab === 'stop-detail' && (
-          <StopDetailScreen
-            onNavigate={setActiveTab}
-            onSelectRoute={(routeNo) => setActiveTab('route-detail')}
-          />
-        )}
-
-        {activeTab === 'set-alert' && (
-          <SetAlertScreen
-            onNavigate={setActiveTab}
-          />
-        )}
-
-        {activeTab === 'favorites' && (
-          <FavoritesScreen
-            onNavigate={setActiveTab}
-            onStartTrip={startTrip}
-          />
-        )}
 
         {activeTab === 'set-destination' && (
           <SetDestinationScreen

@@ -1,5 +1,5 @@
 // assistantService.js - StopAhead AI Intelligent Multi-Modal Travel Assistant Engine
-import { search_destination, searchPhotonPlaces, searchPhotonWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints, getKnownChennaiLandmarkFallback } from './osmService';
+import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchMultiModeAvailability, fetchOverpassNearbyStops, fetchOsmRouteRelationsBetweenPoints, getKnownChennaiLandmarkFallback } from './osmService';
 import { calculateHaversineDistance } from './geoHelper';
 import { findAllRoutesServingDestination } from '../data/verifiedBusRoutes';
 import { findNearestMetroStation } from '../data/metroDataset.js';
@@ -258,7 +258,7 @@ async function executeAssistantLogic(userQuery, appContext, startTime) {
 
     if (destMatch && userLat && userLng) {
       const locationBias = { lat: userLat, lng: userLng, delta: 0.15, bounded: true };
-      const searchRes = await search_destination(destMatch, locationBias).catch(() => ({ places: [] }));
+      const searchRes = await searchNominatimWithBroadenedFallback(destMatch, locationBias).catch(() => ({ places: [] }));
 
       if (searchRes.places && searchRes.places.length > 0) {
         const place = searchRes.places[0];
@@ -356,8 +356,8 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
   try {
     const locationBias = { lat: userLat, lng: userLng, delta: 0.40 };
 
-    // Search exact raw query first via Photon search_destination tool, retry with broadened search if 0 results
-    const searchResult = await search_destination(destQuery || rawQuery, locationBias).catch(() => ({ places: [] }));
+    // Search exact raw query first, retry with broadened search if 0 results
+    const searchResult = await searchNominatimWithBroadenedFallback(destQuery || rawQuery, locationBias).catch(() => ({ places: [] }));
     let places = searchResult.places;
 
     if (!places || places.length === 0) {
@@ -447,83 +447,38 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
 
 /**
  * Clean natural language routing prefixes anchored to start of string (^...)
- * and trailing mode/noise suffixes
  */
 function extractTargetPlaceName(fullQuery, phrasesToStrip = []) {
   if (!fullQuery) return '';
   let cleaned = fullQuery.trim();
 
-  // 1. Comprehensive list of leading conversational prefixes
   const leadingPrefixes = [
     /^i\s+want\s+to\s+go\s+to\s+/i,
-    /^i\s+want\s+to\s+go\s+/i,
-    /^i\s+want\s+to\s+reach\s+/i,
-    /^i\s+want\s+to\s+visit\s+/i,
-    /^i\s+want\s+to\s+/i,
-    /^i\s+want\s+/i,
     /^i\s+need\s+to\s+go\s+to\s+/i,
-    /^i\s+need\s+to\s+go\s+/i,
-    /^i\s+need\s+to\s+reach\s+/i,
-    /^i\s+need\s+to\s+/i,
-    /^i\s+need\s+/i,
     /^i'm\s+going\s+to\s+/i,
-    /^i'm\s+going\s+/i,
     /^im\s+going\s+to\s+/i,
-    /^im\s+going\s+/i,
-    /^i\s+am\s+going\s+to\s+/i,
-    /^i\s+am\s+going\s+/i,
-    /^going\s+to\s+/i,
-    /^going\s+/i,
+    /^i\s+want\s+to\s+reach\s+/i,
     /^how\s+do\s+i\s+get\s+to\s+/i,
-    /^how\s+do\s+i\s+go\s+to\s+/i,
-    /^how\s+do\s+i\s+go\s+/i,
     /^how\s+to\s+get\s+to\s+/i,
-    /^how\s+to\s+go\s+to\s+/i,
-    /^how\s+to\s+go\s+/i,
     /^how\s+to\s+reach\s+/i,
-    /^how\s+can\s+i\s+reach\s+/i,
     /^best\s+way\s+to\s+get\s+to\s+/i,
     /^best\s+way\s+there\s+to\s+/i,
     /^best\s+way\s+to\s+/i,
     /^can\s+you\s+take\s+me\s+to\s+/i,
     /^take\s+me\s+to\s+/i,
-    /^take\s+me\s+/i,
-    /^show\s+route\s+to\s+/i,
-    /^show\s+route\s+for\s+/i,
-    /^show\s+route\s+/i,
     /^directions\s+to\s+/i,
-    /^directions\s+for\s+/i,
     /^route\s+to\s+/i,
-    /^route\s+for\s+/i,
     /^navigate\s+to\s+/i,
     /^way\s+to\s+/i,
     /^path\s+to\s+/i,
     /^travel\s+to\s+/i,
-    /^heading\s+to\s+/i,
-    /^go\s+to\s+/i,
-    /^reach\s+/i,
-    /^visit\s+/i
+    /^head\s+to\s+/i,
+    /^go\s+to\s+/i
   ];
 
   for (const prefix of leadingPrefixes) {
     if (prefix.test(cleaned)) {
       cleaned = cleaned.replace(prefix, '').trim();
-      break;
-    }
-  }
-
-  // 2. Strip trailing mode / noise suffixes ("by bus", "by metro", "using train", "please", etc.)
-  const trailingSuffixes = [
-    /\s+by\s+(?:bus|metro|subway|train|local\s+train)$/i,
-    /\s+using\s+(?:bus|metro|subway|train|local\s+train)$/i,
-    /\s+via\s+(?:bus|metro|subway|train|local\s+train)$/i,
-    /\s+on\s+(?:bus|metro|subway|train|local\s+train)$/i,
-    /\s+please$/i
-  ];
-
-  for (const suffix of trailingSuffixes) {
-    if (suffix.test(cleaned)) {
-      cleaned = cleaned.replace(suffix, '').trim();
       break;
     }
   }

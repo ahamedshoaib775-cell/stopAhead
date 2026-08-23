@@ -1,67 +1,28 @@
 // dbService.js - Real Database Persistence service powered by Supabase with User-Scoped Isolation
 import { supabase } from './supabaseClient';
 
-// Global missing tables cache set to eliminate repeated 404 polling loops
-const missingTables = new Set();
-
-function isMissingTableError(error) {
-  if (!error) return false;
-  const code = error.code || '';
-  const msg = error.message || '';
-  return code === 'PGRST204' || code === 'PGRST205' || code === '42P01' || msg.includes('Could not find the table') || msg.includes('does not exist');
-}
-
 /**
  * Fetch saved routes for a specific user ID from Supabase DB
- * Supports both 'saved_routes' and 'saved_recurring_routes' with LocalStorage fallback
  */
 export async function fetchUserSavedRoutes(userId) {
   if (!userId) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('saved_routes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      return data;
+    }
+  } catch (err) {
+    console.warn('Supabase DB fetch saved_routes warning:', err.message);
+  }
+
+  // Scoped User LocalStorage Fallback (guarantees isolated persistence per user)
   const localKey = `stopahead_saved_routes_${userId}`;
-
-  // 1. Try 'saved_routes' if not marked missing
-  if (!missingTables.has('saved_routes')) {
-    try {
-      const { data, error } = await supabase
-        .from('saved_routes')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (!error && Array.isArray(data)) {
-        localStorage.setItem(localKey, JSON.stringify(data));
-        return data;
-      }
-      if (isMissingTableError(error)) {
-        missingTables.add('saved_routes');
-      }
-    } catch (err) {
-      missingTables.add('saved_routes');
-    }
-  }
-
-  // 2. Try 'saved_recurring_routes' alias if not marked missing
-  if (!missingTables.has('saved_recurring_routes')) {
-    try {
-      const { data, error } = await supabase
-        .from('saved_recurring_routes')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (!error && Array.isArray(data)) {
-        localStorage.setItem(localKey, JSON.stringify(data));
-        return data;
-      }
-      if (isMissingTableError(error)) {
-        missingTables.add('saved_recurring_routes');
-      }
-    } catch (err) {
-      missingTables.add('saved_recurring_routes');
-    }
-  }
-
-  // 3. Resilient User-Scoped LocalStorage Fallback
   const stored = localStorage.getItem(localKey);
   if (stored) {
     try {
@@ -94,41 +55,21 @@ export async function saveUserRoute(userId, routeData) {
     created_at: new Date().toISOString()
   };
 
-  const localKey = `stopahead_saved_routes_${userId}`;
+  try {
+    const { data, error } = await supabase
+      .from('saved_routes')
+      .insert([newRouteRecord])
+      .select();
 
-  if (!missingTables.has('saved_routes')) {
-    try {
-      const { data, error } = await supabase
-        .from('saved_routes')
-        .insert([newRouteRecord])
-        .select();
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return data[0];
-      }
-      if (isMissingTableError(error)) missingTables.add('saved_routes');
-    } catch (err) {
-      missingTables.add('saved_routes');
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data[0];
     }
-  }
-
-  if (!missingTables.has('saved_recurring_routes')) {
-    try {
-      const { data, error } = await supabase
-        .from('saved_recurring_routes')
-        .insert([newRouteRecord])
-        .select();
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return data[0];
-      }
-      if (isMissingTableError(error)) missingTables.add('saved_recurring_routes');
-    } catch (err) {
-      missingTables.add('saved_recurring_routes');
-    }
+  } catch (err) {
+    console.warn('Supabase insert saved_route warning:', err.message);
   }
 
   // Save to user-scoped local storage fallback
+  const localKey = `stopahead_saved_routes_${userId}`;
   const existing = await fetchUserSavedRoutes(userId);
   const updated = [newRouteRecord, ...existing.filter((r) => r.id !== newRouteRecord.id)];
   localStorage.setItem(localKey, JSON.stringify(updated));
@@ -141,15 +82,10 @@ export async function saveUserRoute(userId, routeData) {
 export async function deleteUserRoute(userId, routeId) {
   if (!userId || !routeId) return;
 
-  if (!missingTables.has('saved_routes')) {
-    try {
-      await supabase.from('saved_routes').delete().eq('user_id', userId).eq('id', routeId);
-    } catch (err) {}
-  }
-  if (!missingTables.has('saved_recurring_routes')) {
-    try {
-      await supabase.from('saved_recurring_routes').delete().eq('user_id', userId).eq('id', routeId);
-    } catch (err) {}
+  try {
+    await supabase.from('saved_routes').delete().eq('user_id', userId).eq('id', routeId);
+  } catch (err) {
+    console.warn('Supabase delete saved_route warning:', err);
   }
 
   const localKey = `stopahead_saved_routes_${userId}`;
@@ -163,26 +99,22 @@ export async function deleteUserRoute(userId, routeId) {
  */
 export async function fetchUserTripHistory(userId) {
   if (!userId) return [];
-  const localKey = `stopahead_trip_history_${userId}`;
 
-  if (!missingTables.has('trip_history')) {
-    try {
-      const { data, error } = await supabase
-        .from('trip_history')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('trip_history')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
 
-      if (!error && Array.isArray(data)) {
-        localStorage.setItem(localKey, JSON.stringify(data));
-        return data;
-      }
-      if (isMissingTableError(error)) missingTables.add('trip_history');
-    } catch (err) {
-      missingTables.add('trip_history');
+    if (!error && Array.isArray(data)) {
+      return data;
     }
+  } catch (err) {
+    console.warn('Supabase fetch trip_history warning:', err.message);
   }
 
+  const localKey = `stopahead_trip_history_${userId}`;
   const stored = localStorage.getItem(localKey);
   if (stored) {
     try {
@@ -210,13 +142,10 @@ export async function recordTripHistory(userId, tripData) {
     created_at: new Date().toISOString()
   };
 
-  if (!missingTables.has('trip_history')) {
-    try {
-      const { error } = await supabase.from('trip_history').insert([historyRecord]);
-      if (isMissingTableError(error)) missingTables.add('trip_history');
-    } catch (err) {
-      missingTables.add('trip_history');
-    }
+  try {
+    await supabase.from('trip_history').insert([historyRecord]);
+  } catch (err) {
+    console.warn('Supabase insert trip_history warning:', err);
   }
 
   const localKey = `stopahead_trip_history_${userId}`;
@@ -439,9 +368,8 @@ export async function saveChatMessage(conversationId, role, content, metadata = 
   const updated = [...existing, msgRecord];
   localStorage.setItem(localKey, JSON.stringify(updated));
 
-  try {
-    const user = await getCurrentUser();
-    if (user && user.id) {
+  if (userId) {
+    try {
       const { error } = await supabase.from('chat_messages').insert([{
         conversation_id: conversationId,
         role,
@@ -451,9 +379,9 @@ export async function saveChatMessage(conversationId, role, content, metadata = 
       if (error) {
         console.warn('[StopAhead DB Notice] Chat message insert notice:', error.message);
       }
+    } catch (e) {
+      console.warn('[StopAhead DB Exception] Chat message insert exception:', e);
     }
-  } catch (e) {
-    console.warn('[StopAhead DB Exception] Chat message insert exception:', e);
   }
 
   return msgRecord;
@@ -549,59 +477,6 @@ export async function deleteChatMessagesAfter(conversationId, targetMessageId) {
 
   return { success: true };
 }
-
-/**
- * Synchronize user profile into 'users' or 'profiles' table with LocalStorage fallback
- */
-export async function syncUserProfile(user, profileData = {}) {
-  if (!user || !user.id) return null;
-
-  const profileRecord = {
-    id: user.id,
-    first_name: profileData.first_name || profileData.firstName || user.user_metadata?.first_name || user.user_metadata?.full_name?.split(' ')[0] || '',
-    last_name: profileData.last_name || profileData.lastName || user.user_metadata?.last_name || user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
-    email: user.email || profileData.email || null,
-    phone: user.phone || profileData.phone || null,
-    created_at: user.created_at || new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  };
-
-  const localKey = `stopahead_user_profile_${user.id}`;
-  try {
-    localStorage.setItem(localKey, JSON.stringify(profileRecord));
-  } catch (e) {}
-
-  // 1. Try upserting to 'users' table
-  if (!missingTables.has('users')) {
-    try {
-      const { error } = await supabase
-        .from('users')
-        .upsert(profileRecord, { onConflict: 'id' });
-
-      if (!error) return profileRecord;
-      if (isMissingTableError(error)) missingTables.add('users');
-    } catch (err) {
-      missingTables.add('users');
-    }
-  }
-
-  // 2. Try upserting to 'profiles' table alias
-  if (!missingTables.has('profiles')) {
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .upsert(profileRecord, { onConflict: 'id' });
-
-      if (!error) return profileRecord;
-      if (isMissingTableError(error)) missingTables.add('profiles');
-    } catch (err) {
-      missingTables.add('profiles');
-    }
-  }
-
-  return profileRecord;
-}
-
 
 
 

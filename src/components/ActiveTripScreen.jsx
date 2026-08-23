@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigation, SkipForward, Bell, AlertCircle, RotateCcw, Compass, Loader2, MapPin, CheckCircle2, ShieldAlert, Share2, Flag } from 'lucide-react';
 import { formatTimeRemaining } from '../utils/geoHelper';
-import { openGoogleMapsDirections } from '../utils/navigationHelper';
+import LeafletMap from './LeafletMap';
 import { getTransitModeInfo } from './TransitModeSelector';
 
 export default function ActiveTripScreen({
@@ -24,6 +24,7 @@ export default function ActiveTripScreen({
   onOpenDisruptionModal,
   onOpenStopReportModal
 }) {
+  // Console logging for active trip render state
   console.log('[StopAhead] Rendering ActiveTripScreen. Active trip state:', activeTrip);
 
   // 1. Missing or Null Active Trip State Handler
@@ -87,97 +88,6 @@ export default function ActiveTripScreen({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Simulation Mode Persistent Warning & Controls Toolbar */}
-      {(isSimulating || activeTrip?.isSimulated) && (
-        <div
-          style={{
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, #fef3c7 0%, #ffedf7 100%)',
-            border: '2px dashed #f59e0b',
-            padding: '0.85rem 1rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.75rem',
-            boxShadow: '0 4px 14px rgba(245, 158, 11, 0.12)'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <span style={{ background: '#f59e0b', color: '#ffffff', fontSize: '0.68rem', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 900, letterSpacing: '0.04em' }}>DEMO</span>
-              <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#92400e' }}>
-                ⚠️ Simulation Mode — not a real trip
-              </span>
-            </div>
-            {onToggleSim && (
-              <button
-                type="button"
-                onClick={onToggleSim}
-                style={{
-                  background: isSimulating ? '#f59e0b' : '#10b981',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '0.25rem 0.6rem',
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  cursor: 'pointer'
-                }}
-              >
-                {isSimulating ? 'Pause' : 'Resume'}
-              </button>
-            )}
-          </div>
-
-          {/* Simulation Controls Row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.74rem', color: '#78350f', fontWeight: 700 }}>Speed:</span>
-            {[1, 2, 4].map((spd) => (
-              <button
-                key={spd}
-                type="button"
-                onClick={() => onChangeSimSpeed && onChangeSimSpeed(spd)}
-                style={{
-                  padding: '0.25rem 0.55rem',
-                  borderRadius: '6px',
-                  background: simSpeed === spd ? '#92400e' : '#ffffff',
-                  color: simSpeed === spd ? '#78350f' : '#78350f',
-                  border: '1px solid #f59e0b',
-                  fontSize: '0.74rem',
-                  fontWeight: 800,
-                  cursor: 'pointer'
-                }}
-              >
-                {spd}x
-              </button>
-            ))}
-
-            {onJumpToThreshold && (
-              <button
-                type="button"
-                onClick={onJumpToThreshold}
-                style={{
-                  marginLeft: 'auto',
-                  padding: '0.3rem 0.65rem',
-                  borderRadius: '8px',
-                  background: '#6d28d9',
-                  color: '#ffffff',
-                  border: 'none',
-                  fontSize: '0.76rem',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.3rem'
-                }}
-              >
-                <SkipForward size={14} />
-                <span>Skip to Arrival Alarm</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Approaching Alert Banner */}
       {isApproaching && (
         <div className="proximity-banner" style={{ justifyContent: 'space-between' }}>
@@ -299,77 +209,41 @@ export default function ActiveTripScreen({
         </div>
       </div>
 
-      {/* Turn-by-Turn Navigation Card (Google Maps Handoff) */}
-      <div
-        style={{
-          borderRadius: '16px',
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 4px 16px rgba(15, 23, 42, 0.05)',
-          padding: '0.85rem 1rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '0.75rem'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              background: 'rgba(2, 90, 237, 0.08)',
-              color: 'var(--accent)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <Navigation size={18} />
+      {/* OpenStreetMap Leaflet Map with Loading Overlay */}
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Live Route Tracker
           </div>
-          <div>
-            <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#0f172a' }}>
-              Live Turn-by-Turn
-            </div>
-            <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
-              StopAhead runs stop alarm in background
-            </div>
+          <div
+            onClick={onExpandFullScreen}
+            style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}
+          >
+            {isLoadingRoute ? (
+              <>
+                <Loader2 size={12} className="spin" />
+                <span>Fetching OSRM polyline...</span>
+              </>
+            ) : (
+              <>
+                <Compass size={12} />
+                <span>Tap for Full-Screen Navigation</span>
+              </>
+            )}
           </div>
         </div>
 
-        {destinationStop?.lat && destinationStop?.lng && (
-          <button
-            type="button"
-            onClick={() => {
-              openGoogleMapsDirections(
-                currentCoords ? currentCoords[0] : null,
-                currentCoords ? currentCoords[1] : null,
-                destinationStop.lat,
-                destinationStop.lng,
-                transportMode,
-                'transit'
-              );
-            }}
-            style={{
-              padding: '0.55rem 0.85rem',
-              borderRadius: '10px',
-              background: 'var(--accent)',
-              color: '#ffffff',
-              border: 'none',
-              fontWeight: 800,
-              fontSize: '0.78rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              boxShadow: '0 2px 8px rgba(2, 90, 237, 0.3)'
-            }}
-          >
-            <Navigation size={14} />
-            Google Maps
-          </button>
-        )}
+        <LeafletMap
+          originCoords={originCoords}
+          destCoords={destCoords}
+          currentCoords={currentCoords}
+          heading={activeHeading}
+          stops={mapStops}
+          routeCoordinates={route?.coordinates}
+          transportMode={transportMode}
+          height="190px"
+          onExpandFullScreen={onExpandFullScreen}
+        />
       </div>
 
       {/* Stop-by-Stop Itinerary Timeline */}

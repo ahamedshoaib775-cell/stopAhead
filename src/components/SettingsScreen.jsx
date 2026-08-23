@@ -107,24 +107,6 @@ export default function SettingsScreen({ settings, onUpdateSettings, onResetSett
         </div>
       )}
 
-      {!user && onSignOut && (
-        <div className="quiet-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-            You are browsing as a Guest. Sign in to save custom routes & sync across devices.
-          </div>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={onSignOut}
-            style={{ width: '100%', background: 'var(--accent)', color: '#ffffff', fontWeight: 800, padding: '0.75rem', borderRadius: '14px' }}
-            id="btn-sign-in-guest"
-          >
-            <LogOut size={16} />
-            <span>Sign In / Create Account</span>
-          </button>
-        </div>
-      )}
-
       {/* Language / மொழி Picker */}
       <div className="quiet-card">
         <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

@@ -1,52 +1,46 @@
-// BottomNav.jsx - 5-Tab Bar (Home, Search, Map, Alerts, Profile) with active tab accent highlighting
+// BottomNav.jsx - Minimal bottom navigation bar
 import React from 'react';
-import { Home, Search, Map, Bell, User } from 'lucide-react';
+import { Home, MapPin, Navigation, Settings } from 'lucide-react';
 
-export default function BottomNav({ activeTab, onNavigate, hasActiveAlerts }) {
-  const tabs = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'search', label: 'Search', icon: Search },
-    { id: 'map', label: 'Map', icon: Map },
-    { id: 'alerts', label: 'Alerts', icon: Bell, badge: hasActiveAlerts },
-    { id: 'profile', label: 'Profile', icon: User }
-  ];
-
+export default function BottomNav({ activeTab, onNavigate, hasActiveTrip }) {
   return (
-    <nav className="bottom-nav" style={{ background: '#FFFFFF', borderTop: '1px solid #E2E8F0', boxShadow: '0 -4px 20px rgba(15, 23, 42, 0.04)' }}>
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = activeTab === tab.id || (tab.id === 'search' && activeTab === 'set-destination') || (tab.id === 'profile' && (activeTab === 'settings' || activeTab === 'admin'));
+    <nav className="bottom-nav">
+      <button
+        className={`nav-tab ${activeTab === 'home' ? 'active' : ''}`}
+        onClick={() => onNavigate('home')}
+        id="nav-tab-home"
+      >
+        <Home size={19} className="nav-icon" />
+        <span>Home</span>
+      </button>
 
-        return (
-          <button
-            key={tab.id}
-            className={`nav-tab ${isActive ? 'active' : ''}`}
-            onClick={() => onNavigate(tab.id)}
-            id={`nav-tab-${tab.id}`}
-            style={{ color: isActive ? '#025AED' : '#64748B' }}
-          >
-            <div style={{ position: 'relative' }}>
-              <Icon size={20} className="nav-icon" color={isActive ? '#025AED' : '#64748B'} />
-              {tab.badge && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '-2px',
-                    right: '-4px',
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: '#16A34A'
-                  }}
-                />
-              )}
-            </div>
-            <span style={{ fontWeight: isActive ? 800 : 600, fontSize: '0.72rem', marginTop: '2px' }}>
-              {tab.label}
-            </span>
-          </button>
-        );
-      })}
+      <button
+        className={`nav-tab ${activeTab === 'set-destination' ? 'active' : ''}`}
+        onClick={() => onNavigate('set-destination')}
+        id="nav-tab-destination"
+      >
+        <MapPin size={19} className="nav-icon" />
+        <span>Set Stop</span>
+      </button>
+
+      <button
+        className={`nav-tab ${activeTab === 'active-trip' ? 'active' : ''}`}
+        onClick={() => onNavigate('active-trip')}
+        id="nav-tab-trip"
+      >
+        <Navigation size={19} className="nav-icon" />
+        <span>Active Trip</span>
+        {hasActiveTrip && <span className="nav-badge-dot" />}
+      </button>
+
+      <button
+        className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`}
+        onClick={() => onNavigate('settings')}
+        id="nav-tab-settings"
+      >
+        <Settings size={19} className="nav-icon" />
+        <span>Settings</span>
+      </button>
     </nav>
   );
 }

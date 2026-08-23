@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Sparkles, Clock, ArrowRight, MapPin, Footprints, Check, Loader2, X, AlertTriangle, Tag, AlertCircle } from 'lucide-react';
-import { searchPhotonPlaces, searchPhotonWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
+import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
 import { TRANSIT_MODES, getTransitModeInfo } from './TransitModeSelector';
 
 export default function BestWayThereModal({ userLocation, onStartTrip, onClose }) {
@@ -13,48 +13,35 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
   const [isCalculating, setIsCalculating] = useState(false);
   const [viableRoutes, setViableRoutes] = useState([]);
 
-  // Live Photon search with location bias, 300ms debounce & AbortController cancellation
+  // Live Nominatim search with location bias & broadened search fallback
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setSearchResults([]);
       setBroadenedNote(null);
-      setIsSearching(false);
       return;
     }
-
-    const abortController = new AbortController();
 
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
         const locationBias = userLocation?.lat && userLocation?.lng ? {
           lat: userLocation.lat,
-          lng: userLocation.lng
+          lng: userLocation.lng,
+          delta: 0.18,
+          bounded: true
         } : null;
 
-        const res = await searchPhotonWithBroadenedFallback(searchQuery, locationBias, { signal: abortController.signal });
-        if (!abortController.signal.aborted) {
-          setSearchResults(res.places || []);
-          setBroadenedNote(res.isBroadened ? res.note : null);
-        }
+        const res = await searchNominatimWithBroadenedFallback(searchQuery, locationBias);
+        setSearchResults(res.places || []);
+        setBroadenedNote(res.isBroadened ? res.note : null);
       } catch (e) {
-        if (e.name !== 'AbortError') {
-          console.warn('BestWayThere search error:', e);
-          if (!abortController.signal.aborted) {
-            setSearchResults([]);
-          }
-        }
+        console.warn('BestWayThere search error:', e);
       } finally {
-        if (!abortController.signal.aborted) {
-          setIsSearching(false);
-        }
+        setIsSearching(false);
       }
-    }, 300);
+    }, 400);
 
-    return () => {
-      clearTimeout(timer);
-      abortController.abort();
-    };
+    return () => clearTimeout(timer);
   }, [searchQuery, userLocation]);
 
 
@@ -289,9 +276,7 @@ export default function BestWayThereModal({ userLocation, onStartTrip, onClose }
                   fontSize: '0.85rem'
                 }}
               >
-                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {place.displayName || (place.city ? `${place.name} — ${place.city}` : place.name)}
-                </div>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{place.name}</div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{place.description}</div>
               </div>
             ))}

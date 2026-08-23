@@ -52,8 +52,6 @@ export default function MapLibreMap({
   transportMode = 'bus',
   targetPlaceCoords = null,
   targetPlaceName = null,
-  highlightedStopCoords = null,
-  highlightedStopName = null,
   height = '320px',
   onExpandFullScreen,
   tileStyle = 'bright'
@@ -64,7 +62,6 @@ export default function MapLibreMap({
   const vehicleMarkerRef = useRef(null);
   const destMarkerRef = useRef(null);
   const placeMarkerRef = useRef(null);
-  const highlightedMarkerRef = useRef(null);
   const stopMarkersRef = useRef([]);
 
   const [weakGpsInfo, setWeakGpsInfo] = useState(null);
@@ -170,44 +167,6 @@ export default function MapLibreMap({
     el.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.4)';
     el.title = stopName;
     return el;
-  };
-
-  // Helper to create Highlighted Suggested Route Stop Pin Element with Pulsing Green Aura Ring
-  const createHighlightedStopPinElement = (label = '') => {
-    const container = document.createElement('div');
-    container.className = 'highlighted-stop-pin-pulse';
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.alignItems = 'center';
-    container.style.cursor = 'pointer';
-    container.style.zIndex = '999';
-
-    const badge = document.createElement('div');
-    badge.style.background = '#16a34a';
-    badge.style.color = '#ffffff';
-    badge.style.fontSize = '0.72rem';
-    badge.style.fontWeight = '800';
-    badge.style.padding = '0.2rem 0.55rem';
-    badge.style.borderRadius = '6px';
-    badge.style.boxShadow = '0 4px 14px rgba(22, 163, 74, 0.5)';
-    badge.style.marginBottom = '3px';
-    badge.style.whiteSpace = 'nowrap';
-    badge.innerText = label || 'Suggested Route Stop';
-
-    const pulseRing = document.createElement('div');
-    pulseRing.innerHTML = `
-      <svg width="34" height="34" viewBox="0 0 32 32">
-        <circle cx="16" cy="16" r="13" fill="rgba(22, 163, 74, 0.3)" stroke="#16a34a" stroke-width="2">
-          <animate attributeName="r" values="8;14;8" dur="1.8s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="1;0.4;1" dur="1.8s" repeatCount="indefinite"/>
-        </circle>
-        <circle cx="16" cy="16" r="7" fill="#16a34a" stroke="#ffffff" stroke-width="2"/>
-      </svg>
-    `;
-
-    container.appendChild(badge);
-    container.appendChild(pulseRing);
-    return container;
   };
 
   const leafletMapRef = useRef(null);
@@ -377,14 +336,15 @@ export default function MapLibreMap({
     const map = mapInstanceRef.current;
     const lMap = leafletMapRef.current;
 
-    if (routeCoordinates && routeCoordinates.length >= 2) {
-      console.log('Route geometry points:', routeCoordinates.length);
-      console.log('Route start:', routeCoordinates[0]);
-      console.log('Route end:', routeCoordinates[routeCoordinates.length - 1]);
-    }
+    if (!map && !lMap) return;
 
     if (lMap) {
-      let routePoints = (routeCoordinates && routeCoordinates.length >= 2) ? routeCoordinates : [];
+      let routePoints = routeCoordinates;
+      if (!routePoints || routePoints.length === 0) {
+        if (originCoords && destCoords) {
+          routePoints = [originCoords, destCoords];
+        }
+      }
 
       if (routePoints && routePoints.length > 0) {
         if (leafletPolylineRef.current) {
@@ -394,19 +354,10 @@ export default function MapLibreMap({
         try {
           lMap.fitBounds(leafletPolylineRef.current.getBounds(), { padding: [30, 30] });
         } catch (e) {}
-      } else if (leafletPolylineRef.current) {
-        lMap.removeLayer(leafletPolylineRef.current);
-        leafletPolylineRef.current = null;
       }
 
       // User Arrow Marker in Leaflet
       let userPos = currentCoords;
-      if (currentCoords && routePoints.length >= 2) {
-        const snapResult = snapPointToPolyline(currentCoords[0], currentCoords[1], routePoints);
-        if (snapResult.snappedLat && snapResult.snappedLng) {
-          userPos = [snapResult.snappedLat, snapResult.snappedLng];
-        }
-      }
       if (!userPos && originCoords) userPos = originCoords;
 
       if (userPos && isValidLatLng(userPos)) {
@@ -445,9 +396,14 @@ export default function MapLibreMap({
 
     // 1. Update Route Polyline
     const updateRoute = () => {
-      let routePoints = (routeCoordinates && routeCoordinates.length >= 2) ? routeCoordinates : [];
+      let routePoints = routeCoordinates;
+      if (!routePoints || routePoints.length === 0) {
+        if (originCoords && destCoords) {
+          routePoints = [originCoords, destCoords];
+        }
+      }
 
-      if (map.getSource('route-source')) {
+      if (routePoints && routePoints.length > 0 && map.getSource('route-source')) {
         // MapLibre requires [lng, lat] order
         const geojsonCoordinates = routePoints.map((pt) => [pt[1], pt[0]]);
         map.getSource('route-source').setData({
@@ -525,20 +481,6 @@ export default function MapLibreMap({
       placeMarkerRef.current = null;
     }
 
-    // 5b. Update Highlighted Suggested Route Bus Stop Marker
-    if (highlightedStopCoords && isValidLatLng(highlightedStopCoords)) {
-      const hlLngLat = [highlightedStopCoords[1], highlightedStopCoords[0]];
-      if (!highlightedMarkerRef.current) {
-        const el = createHighlightedStopPinElement(highlightedStopName);
-        highlightedMarkerRef.current = new maplibregl.Marker({ element: el }).setLngLat(hlLngLat).addTo(map);
-      } else {
-        highlightedMarkerRef.current.setLngLat(hlLngLat);
-      }
-    } else if (highlightedMarkerRef.current) {
-      highlightedMarkerRef.current.remove();
-      highlightedMarkerRef.current = null;
-    }
-
     // 6. Update Transit Stop Markers
     stopMarkersRef.current.forEach((m) => m.remove());
     stopMarkersRef.current = [];
@@ -579,7 +521,7 @@ export default function MapLibreMap({
     } else if (allBoundsPoints.length === 1) {
       map.panTo(allBoundsPoints[0], { animate: true });
     }
-  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, targetPlaceCoords, targetPlaceName, tileStyle, activePosition]);
+  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, targetPlaceCoords, targetPlaceName, tileStyle]);
 
   const handleZoomIn = (e) => {
     e.stopPropagation();
