@@ -1,32 +1,19 @@
-// AuthScreen.jsx - StopAhead Full Signup & Login Flow with Supabase OTP Verification
+// AuthScreen.jsx - StopAhead Email OTP Signup & Login Flow with Branded Success Animation
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, Phone, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, RefreshCw, ChevronDown, Edit3 } from 'lucide-react';
+import { Mail, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, RefreshCw, Edit3 } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 import { syncUserProfile } from '../utils/dbService';
-
-const COUNTRY_CODES = [
-  { code: '+91', country: 'IN', flag: '🇮🇳', name: 'India (+91)' },
-  { code: '+1', country: 'US', flag: '🇺🇸', name: 'United States / Canada (+1)' },
-  { code: '+44', country: 'GB', flag: '🇬🇧', name: 'United Kingdom (+44)' },
-  { code: '+971', country: 'AE', flag: '🇦🇪', name: 'United Arab Emirates (+971)' },
-  { code: '+65', country: 'SG', flag: '🇸🇬', name: 'Singapore (+65)' },
-  { code: '+61', country: 'AU', flag: '🇦🇺', name: 'Australia (+61)' },
-  { code: '+60', country: 'MY', flag: '🇲🇾', name: 'Malaysia (+60)' },
-  { code: '+49', country: 'DE', flag: '🇩🇪', name: 'Germany (+49)' }
-];
+import OtpSuccessAnimation from './OtpSuccessAnimation';
 
 export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
   // Navigation & Flow state
   const [authMode, setAuthMode] = useState('signup'); // 'signup' | 'login'
-  const [step, setStep] = useState(1); // 1: Input Form, 2: OTP Verification Screen
-  const [method, setMethod] = useState('email'); // 'email' | 'phone'
+  const [step, setStep] = useState(1); // 1: Email & Name Form, 2: OTP Verification Screen
 
-  // Step 1 Input States
+  // Form Input States (Email Only - Phone auth removed completely)
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [countryCode, setCountryCode] = useState('+91');
-  const [phoneNumber, setPhoneNumber] = useState('');
 
   // Step 2 OTP State (6 individual digit boxes)
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
@@ -37,7 +24,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Resend Cooldown Timer
+  // Part 2: Success Animation & Auth Session Cache
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [authDataCache, setAuthDataCache] = useState(null);
+
+  // Resend Cooldown Timer (45 seconds)
   const [cooldown, setCooldown] = useState(0);
 
   useEffect(() => {
@@ -50,36 +41,25 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
     return () => clearInterval(timer);
   }, [cooldown]);
 
-  // Format validation helpers
+  // Email format validation helper
   const isValidEmail = (str) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str.trim());
-  const isValidPhone = (str) => /^\d{7,14}$/.test(str.trim().replace(/\D/g, ''));
-
-  // Formatted E.164 phone string
-  const fullPhone = `${countryCode}${phoneNumber.trim().replace(/\D/g, '')}`;
 
   // Masking helper for privacy on Step 2 OTP Screen
-  const getMaskedIdentifier = () => {
-    if (method === 'email') {
-      const parts = email.trim().split('@');
-      if (parts.length !== 2) return email;
-      const name = parts[0];
-      const maskedName = name.length > 2 ? `${name[0]}***${name[name.length - 1]}` : `${name[0]}***`;
-      return `${maskedName}@${parts[1]}`;
-    } else {
-      const digits = phoneNumber.trim().replace(/\D/g, '');
-      if (digits.length >= 4) {
-        const last3 = digits.slice(-3);
-        return `${countryCode} 9xxxx xx${last3}`;
-      }
-      return fullPhone;
-    }
+  const getMaskedEmail = () => {
+    const parts = email.trim().split('@');
+    if (parts.length !== 2) return email;
+    const name = parts[0];
+    const maskedName = name.length > 2 ? `${name[0]}***${name[name.length - 1]}` : `${name[0]}***`;
+    return `${maskedName}@${parts[1]}`;
   };
 
-  // Step 1 Submit: Validate inputs & Send OTP via Supabase Auth
+  // Step 1 Submit: Validate Email & Names, then Trigger Email OTP
   const handleSendOtp = async (e) => {
     if (e) e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
+
+    const trimmedEmail = email.trim();
 
     // 1. Name validation for Signup
     if (authMode === 'signup') {
@@ -93,66 +73,37 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
       }
     }
 
-    // 2. Method-specific format validation
-    if (method === 'email') {
-      if (!email.trim() || !isValidEmail(email)) {
-        setErrorMessage('Please enter a valid email address.');
-        return;
-      }
-    } else {
-      if (!phoneNumber.trim() || !isValidPhone(phoneNumber)) {
-        setErrorMessage('Please enter a valid phone number (e.g. 10 digits for India).');
-        return;
-      }
+    // 2. Email format validation
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
     }
 
     setIsLoading(true);
 
     try {
-      let result;
-
-      if (method === 'email') {
-        const userEmail = email.trim();
-        console.log(`[StopAhead Auth] Triggering Email OTP for ${userEmail}...`);
-        result = await supabase.auth.signInWithOtp({
-          email: userEmail,
-          options: {
-            data: {
-              first_name: firstName.trim(),
-              last_name: lastName.trim()
-            }
+      console.log(`[StopAhead Auth] Sending Email OTP to ${trimmedEmail}...`);
+      const { error } = await supabase.auth.signInWithOtp({
+        email: trimmedEmail,
+        options: {
+          data: {
+            first_name: firstName.trim(),
+            last_name: lastName.trim()
           }
-        });
-      } else {
-        console.log(`[StopAhead Auth] Triggering SMS OTP for ${fullPhone}...`);
-        result = await supabase.auth.signInWithOtp({
-          phone: fullPhone,
-          options: {
-            data: {
-              first_name: firstName.trim(),
-              last_name: lastName.trim()
-            }
-          }
-        });
-      }
-
-      const { error } = result || {};
+        }
+      });
 
       if (error) {
-        console.warn('[StopAhead Auth Error]:', error);
+        console.warn('[StopAhead Email OTP Error]:', error);
         const msg = error.message || '';
-
-        // Graceful fallback notice if phone SMS provider is not configured in Supabase dashboard
-        if (method === 'phone' && (msg.includes('Unsupported phone provider') || msg.includes('SMS provider') || msg.includes('Provider not found') || msg.includes('disabled'))) {
-          setErrorMessage('Phone verification is temporarily unavailable on this server — please try email instead.');
-        } else if (msg.toLowerCase().includes('rate limit')) {
-          setErrorMessage('Too many OTP requests. Please wait a minute before retrying.');
+        if (msg.toLowerCase().includes('rate limit')) {
+          setErrorMessage('Too many requests. Please wait a minute before retrying.');
         } else {
-          setErrorMessage(msg || 'Could not send verification code. Please check your details.');
+          setErrorMessage(msg || 'Could not send verification code. Please check your email address.');
         }
       } else {
-        console.log('[StopAhead Auth] OTP Code Sent Successfully!');
-        setSuccessMessage(`Verification code sent to ${getMaskedIdentifier()}`);
+        console.log('[StopAhead Auth] Email OTP Code Sent Successfully!');
+        setSuccessMessage(`Verification code sent to ${getMaskedEmail()}`);
         setStep(2);
         setCooldown(45);
         setOtpDigits(['', '', '', '', '', '']);
@@ -162,11 +113,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
       }
     } catch (err) {
       console.error('[StopAhead Auth Exception]:', err);
-      if (method === 'phone') {
-        setErrorMessage('Phone verification is temporarily unavailable — please try email instead.');
-      } else {
-        setErrorMessage('An unexpected network error occurred. Please try again.');
-      }
+      setErrorMessage('An unexpected network error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -205,7 +152,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
     }
   };
 
-  // Step 2 Submit: Verify 6-digit OTP code
+  // Step 2 Submit: Verify 6-digit OTP code & trigger success animation
   const handleVerifyOtp = async (e) => {
     if (e) e.preventDefault();
     setErrorMessage('');
@@ -220,22 +167,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
     setIsLoading(true);
 
     try {
-      let result;
-      if (method === 'email') {
-        result = await supabase.auth.verifyOtp({
-          email: email.trim(),
-          token: otpCode,
-          type: 'email'
-        });
-      } else {
-        result = await supabase.auth.verifyOtp({
-          phone: fullPhone,
-          token: otpCode,
-          type: 'sms'
-        });
-      }
-
-      const { data, error } = result || {};
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: otpCode,
+        type: 'email'
+      });
 
       if (error) {
         console.warn('[StopAhead OTP Verification Error]:', error);
@@ -245,26 +181,33 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
           setErrorMessage('Incorrect verification code. Please check and try again.');
         }
       } else if (data?.user) {
-        console.log('[StopAhead Auth] Verification Success! Syncing profile...');
-        setSuccessMessage('Account verified successfully!');
+        console.log('[StopAhead Auth] OTP Verification Success! Triggering success animation...');
 
-        // Sync first_name, last_name, email, phone to DB profile table
+        // 1. Instant Green Feedback (0-0.2s)
+        setIsOtpVerified(true);
+
+        // Sync first_name, last_name, email to DB profile table
         await syncUserProfile(data.user, {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
-          email: email.trim(),
-          phone: method === 'phone' ? fullPhone : null
+          email: email.trim()
         });
 
-        if (onAuthSuccess) {
-          onAuthSuccess(data.user, data.session);
-        }
+        // Store session data to navigate after animation finishes
+        setAuthDataCache({ user: data.user, session: data.session });
       }
     } catch (err) {
       console.error('[StopAhead OTP Verification Exception]:', err);
       setErrorMessage('Network error verifying code. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Callback when OtpSuccessAnimation finishes (~2.5s)
+  const handleAnimationComplete = () => {
+    if (authDataCache && onAuthSuccess) {
+      onAuthSuccess(authDataCache.user, authDataCache.session);
     }
   };
 
@@ -280,6 +223,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
         color: '#0f172a'
       }}
     >
+      {/* Full-Screen Branded Success Animation takeover on correct OTP */}
+      {isOtpVerified && (
+        <OtpSuccessAnimation onComplete={handleAnimationComplete} />
+      )}
+
       {/* Brand Header with Official StopAhead Logo */}
       <div style={{ textAlign: 'center', marginBottom: '1.5rem', width: '100%', maxWidth: '380px' }}>
         <div
@@ -318,10 +266,10 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
         </h1>
         <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0.35rem 0 0 0' }}>
           {step === 2
-            ? `Enter the 6-digit code sent to ${getMaskedIdentifier()}`
+            ? `Enter the 6-digit code sent to ${getMaskedEmail()}`
             : authMode === 'signup'
-            ? 'Sign up with OTP verification for smart proximity transit alerts'
-            : 'Enter your email or phone to receive a 6-digit sign-in code'}
+            ? 'Sign up with Email OTP for smart proximity transit alerts'
+            : 'Enter your email address to receive a 6-digit sign-in code'}
         </p>
       </div>
 
@@ -340,7 +288,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
           gap: '1.1rem'
         }}
       >
-        {/* Step 1: Sign Up / Sign In Form */}
+        {/* Step 1: Sign Up / Sign In Email Form */}
         {step === 1 && (
           <form onSubmit={handleSendOtp} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             
@@ -438,136 +386,31 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
               </div>
             )}
 
-            {/* Method Choice Selector: Email vs Phone */}
+            {/* Email Address Input */}
             <div>
               <label style={{ fontSize: '0.76rem', fontWeight: 800, color: '#334155', marginBottom: '0.35rem', display: 'block' }}>
-                Verification Method
+                Email Address *
               </label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={() => { setMethod('email'); setErrorMessage(''); }}
+              <div style={{ position: 'relative' }}>
+                <Mail size={16} color="#94a3b8" style={{ position: 'absolute', left: 14, top: 14 }} />
+                <input
+                  type="email"
+                  placeholder="e.g. shoaib@stopahead.app"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
                   style={{
-                    flex: 1,
-                    padding: '0.6rem',
+                    width: '100%',
+                    padding: '0.75rem 1rem 0.75rem 2.5rem',
                     borderRadius: '12px',
-                    border: method === 'email' ? '2px solid #025AED' : '1px solid #cbd5e1',
-                    background: method === 'email' ? 'rgba(2, 90, 237, 0.06)' : '#ffffff',
-                    color: method === 'email' ? '#025AED' : '#64748b',
-                    fontWeight: 800,
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.4rem'
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                    color: '#0f172a'
                   }}
-                >
-                  <Mail size={15} />
-                  <span>Email OTP</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setMethod('phone'); setErrorMessage(''); }}
-                  style={{
-                    flex: 1,
-                    padding: '0.6rem',
-                    borderRadius: '12px',
-                    border: method === 'phone' ? '2px solid #025AED' : '1px solid #cbd5e1',
-                    background: method === 'phone' ? 'rgba(2, 90, 237, 0.06)' : '#ffffff',
-                    color: method === 'phone' ? '#025AED' : '#64748b',
-                    fontWeight: 800,
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.4rem'
-                  }}
-                >
-                  <Phone size={15} />
-                  <span>Phone OTP</span>
-                </button>
+                />
               </div>
             </div>
-
-            {/* Single Input Field based on selected method */}
-            {method === 'email' ? (
-              <div>
-                <label style={{ fontSize: '0.76rem', fontWeight: 800, color: '#334155', marginBottom: '0.35rem', display: 'block' }}>
-                  Email Address *
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Mail size={16} color="#94a3b8" style={{ position: 'absolute', left: 14, top: 14 }} />
-                  <input
-                    type="email"
-                    placeholder="e.g. shoaib@stopahead.app"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem 1rem 0.75rem 2.5rem',
-                      borderRadius: '12px',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '0.9rem',
-                      outline: 'none',
-                      color: '#0f172a'
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div>
-                <label style={{ fontSize: '0.76rem', fontWeight: 800, color: '#334155', marginBottom: '0.35rem', display: 'block' }}>
-                  Phone Number *
-                </label>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <select
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                    style={{
-                      padding: '0.75rem 0.5rem',
-                      borderRadius: '12px',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '0.88rem',
-                      fontWeight: 700,
-                      background: '#f8fafc',
-                      color: '#0f172a',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {COUNTRY_CODES.map((c) => (
-                      <option key={c.code + c.country} value={c.code}>
-                        {c.flag} {c.code}
-                      </option>
-                    ))}
-                  </select>
-
-                  <div style={{ position: 'relative', flex: 1 }}>
-                    <Phone size={16} color="#94a3b8" style={{ position: 'absolute', left: 14, top: 14 }} />
-                    <input
-                      type="tel"
-                      placeholder="9876543210"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      required
-                      style={{
-                        width: '100%',
-                        padding: '0.75rem 1rem 0.75rem 2.5rem',
-                        borderRadius: '12px',
-                        border: '1px solid #cbd5e1',
-                        fontSize: '0.9rem',
-                        outline: 'none',
-                        color: '#0f172a'
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Error Feedback Message */}
             {errorMessage && (
@@ -617,7 +460,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
               {isLoading ? (
                 <>
                   <Loader2 size={18} className="spin" />
-                  <span>Sending OTP Code...</span>
+                  <span>Sending Email OTP...</span>
                 </>
               ) : (
                 <>
@@ -633,14 +476,14 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
         {step === 2 && (
           <form onSubmit={handleVerifyOtp} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
             
-            {/* Masked Method Summary & Edit Back Button */}
+            {/* Masked Email Summary & Edit Back Button */}
             <div style={{ background: '#f8fafc', padding: '0.75rem 0.9rem', borderRadius: '14px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
                   Code sent to
                 </div>
                 <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0f172a' }}>
-                  {getMaskedIdentifier()}
+                  {getMaskedEmail()}
                 </div>
               </div>
 
@@ -660,11 +503,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                 }}
               >
                 <Edit3 size={14} />
-                <span>Edit</span>
+                <span>Edit Email</span>
               </button>
             </div>
 
-            {/* 6 Individual Digit OTP Input Boxes */}
+            {/* 6 Individual Digit OTP Input Boxes with Green Success Glow on Correct Code */}
             <div>
               <label style={{ fontSize: '0.78rem', fontWeight: 800, color: '#334155', marginBottom: '0.5rem', display: 'block', textAlign: 'center' }}>
                 Enter 6-Digit Verification Code
@@ -686,14 +529,23 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                       width: '46px',
                       height: '52px',
                       borderRadius: '12px',
-                      border: digit ? '2px solid #025AED' : '1px solid #cbd5e1',
-                      background: digit ? 'rgba(2, 90, 237, 0.05)' : '#ffffff',
+                      border: isOtpVerified
+                        ? '2px solid #10B981'
+                        : digit
+                        ? '2px solid #025AED'
+                        : '1px solid #cbd5e1',
+                      background: isOtpVerified
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : digit
+                        ? 'rgba(2, 90, 237, 0.05)'
+                        : '#ffffff',
                       textAlign: 'center',
                       fontSize: '1.25rem',
                       fontWeight: 800,
-                      color: '#0f172a',
+                      color: isOtpVerified ? '#10B981' : '#0f172a',
                       outline: 'none',
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.2s ease',
+                      boxShadow: isOtpVerified ? '0 0 12px rgba(16, 185, 129, 0.4)' : 'none'
                     }}
                   />
                 ))}
@@ -701,7 +553,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
             </div>
 
             {/* Success Message Banner */}
-            {successMessage && (
+            {successMessage && !isOtpVerified && (
               <div style={{ padding: '0.65rem 0.85rem', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', color: '#059669', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <CheckCircle2 size={16} />
                 <span>{successMessage}</span>
