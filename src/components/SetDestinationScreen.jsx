@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, AlertTriangle, Bookmark, Tag } from 'lucide-react';
+import { Search, MapPin, ArrowRight, Check, Compass, Radio, AlertCircle, AlertTriangle, Bookmark, Tag, Navigation } from 'lucide-react';
 import { searchNominatimPlaces, searchNominatimWithBroadenedFallback, fetchOverpassNearbyStops, fetchNearestTransitStopToPoint, fetchOSRMRoute, fetchOsmRouteRelationsBetweenPoints } from '../utils/osmService';
 import { requestBrowserLocation } from '../utils/locationService';
-import LeafletMap from './LeafletMap';
+import { openGoogleMapsDirections } from '../utils/navigationHelper';
 import LocationPermissionModal from './LocationPermissionModal';
 import CityOverrideModal from './CityOverrideModal';
 import LocationIndicatorChip from './LocationIndicatorChip';
@@ -69,9 +69,9 @@ export default function SetDestinationScreen({
     const endLat = selectedDestinationStop.lat;
     const endLng = selectedDestinationStop.lng;
 
-    // Fetch OSRM route & OSM Route Relations in parallel
+    // Fetch OSRM route & OSM Route Relations in parallel (Enforce foot/walking profile)
     Promise.all([
-      fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode),
+      fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode, 'foot'),
       fetchOsmRouteRelationsBetweenPoints(startLat, startLng, endLat, endLng, transportMode, userLocation?.cityName, selectedDestinationStop.name)
     ])
       .then(([res, routeRelations]) => {
@@ -266,7 +266,7 @@ export default function SetDestinationScreen({
   };
 
 
-  const handleConfirmStart = () => {
+  const handleConfirmStart = (isSimulated = false) => {
     if (!selectedDestinationStop) {
       console.warn('[StopAhead] Cannot confirm start: No destination selected');
       return;
@@ -279,8 +279,8 @@ export default function SetDestinationScreen({
       lng: userLocation?.lng || (selectedDestinationStop.lng - 0.01)
     };
 
-    console.log('[StopAhead] Confirming trip start. Origin:', origin, 'Destination:', selectedDestinationStop, 'Mode:', transportMode);
-    onStartTrip(origin, selectedDestinationStop, thresholdType, thresholdValue, defaultSettings?.alertSound || 'chime', transportMode);
+    console.log('[StopAhead] Confirming trip start. Origin:', origin, 'Destination:', selectedDestinationStop, 'Mode:', transportMode, 'IsSimulated:', isSimulated);
+    onStartTrip(origin, selectedDestinationStop, thresholdType, thresholdValue, defaultSettings?.alertSound || 'chime', transportMode, isSimulated);
   };
 
   return (
@@ -326,52 +326,104 @@ export default function SetDestinationScreen({
       />
 
 
-      {/* Route Map Section with Floating Badge Overlay */}
-      <div style={{ borderRadius: '18px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)', position: 'relative', width: '100%', minHeight: '170px' }}>
-        {(selectedRoute?.distKm || isLoadingRoute || routeError) && (
-          <div
+      {/* Clean Route Summary Card & Google Maps Get Directions Handoff */}
+      <div
+        style={{
+          borderRadius: '16px',
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 4px 16px rgba(15, 23, 42, 0.05)',
+          padding: '1rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.85rem'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: 'rgba(2, 90, 237, 0.08)',
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800
+              }}
+            >
+              <Navigation size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Turn-by-Turn Navigation
+              </div>
+              <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                {selectedDestinationStop ? selectedDestinationStop.name : 'Select a Destination Stop'}
+              </div>
+            </div>
+          </div>
+
+          {selectedRoute && (
+            <div
+              style={{
+                background: 'rgba(2, 90, 237, 0.1)',
+                color: 'var(--accent)',
+                padding: '0.3rem 0.65rem',
+                borderRadius: '999px',
+                fontSize: '0.78rem',
+                fontWeight: 800
+              }}
+            >
+              {selectedRoute.distKm} km • ~{selectedRoute.durationMins}m
+            </div>
+          )}
+        </div>
+
+        {selectedDestinationStop ? (
+          <button
+            type="button"
+            onClick={() => {
+              const uLat = userLocation?.lat || (typeof window !== 'undefined' && window.stopAheadUserLocation?.lat);
+              const uLng = userLocation?.lng || (typeof window !== 'undefined' && window.stopAheadUserLocation?.lng);
+              console.log('[SetDestination] Tapped Get Directions. Resolved origin:', uLat, uLng);
+              openGoogleMapsDirections(
+                uLat,
+                uLng,
+                selectedDestinationStop.lat,
+                selectedDestinationStop.lng,
+                transportMode,
+                'transit'
+              );
+            }}
             style={{
-              position: 'absolute',
-              top: 12,
-              left: 12,
-              zIndex: 20,
-              background: 'rgba(11, 14, 20, 0.85)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: '999px',
-              padding: '0.35rem 0.85rem',
-              fontSize: '0.78rem',
-              fontWeight: 600,
+              width: '100%',
+              padding: '0.85rem 1rem',
+              borderRadius: '12px',
+              background: 'var(--accent)',
+              color: '#ffffff',
+              border: 'none',
+              fontWeight: 800,
+              fontSize: '0.92rem',
+              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.4rem',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)'
+              justifyContent: 'center',
+              gap: '0.5rem',
+              boxShadow: '0 4px 14px rgba(2, 90, 237, 0.35)',
+              transition: 'transform 0.15s ease'
             }}
           >
-            {isLoadingRoute ? (
-              <span style={{ color: 'var(--accent)' }}>Calculating route...</span>
-            ) : routeError ? (
-              <span style={{ color: '#ef4444' }}>⚠️ {routeError}</span>
-            ) : (
-              <span style={{ color: 'var(--text-primary)' }}>
-                📍 <strong style={{ color: 'var(--accent)' }}>{selectedRoute.distKm} km</strong> • ~{selectedRoute.durationMins} mins
-              </span>
-            )}
+            <Navigation size={18} />
+            Get Directions in Google Maps
+          </button>
+        ) : (
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '0.3rem' }}>
+            Pick a stop below to get turn-by-turn directions & set proximity alarm
           </div>
         )}
-
-        <LeafletMap
-          currentCoords={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : null}
-          originCoords={selectedOriginStop ? [selectedOriginStop.lat, selectedOriginStop.lng] : null}
-          destCoords={selectedDestinationStop ? [selectedDestinationStop.lat, selectedDestinationStop.lng] : null}
-          stops={nearbyStops}
-          routeCoordinates={selectedRoute?.coordinates || []}
-          transportMode={transportMode}
-          targetPlaceCoords={selectedTargetPlace ? [selectedTargetPlace.lat, selectedTargetPlace.lng] : null}
-          height="170px"
-          onExpandFullScreen={onExpandFullScreen}
-        />
       </div>
 
       {/* Destination Stop Section */}
@@ -760,18 +812,48 @@ export default function SetDestinationScreen({
         />
       </div>
 
-      {/* Confirm CTA Button */}
-      <button
-        className="btn-primary"
-        onClick={handleConfirmStart}
-        disabled={!selectedDestinationStop}
-        style={{ opacity: selectedDestinationStop ? 1 : 0.5, cursor: selectedDestinationStop ? 'pointer' : 'not-allowed', marginTop: '0.5rem' }}
-        id="btn-confirm-start-trip"
-      >
-        <MapPin size={20} />
-        <span>Confirm & Start Live Tracking</span>
-        <ArrowRight size={18} style={{ marginLeft: 'auto' }} />
-      </button>
+      {/* Confirm CTA Buttons Row */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginTop: '0.5rem' }}>
+        <button
+          className="btn-primary"
+          onClick={() => handleConfirmStart(false)}
+          disabled={!selectedDestinationStop}
+          style={{ opacity: selectedDestinationStop ? 1 : 0.5, cursor: selectedDestinationStop ? 'pointer' : 'not-allowed' }}
+          id="btn-confirm-start-trip"
+        >
+          <MapPin size={20} />
+          <span>Confirm & Start Live Tracking</span>
+          <ArrowRight size={18} style={{ marginLeft: 'auto' }} />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleConfirmStart(true)}
+          disabled={!selectedDestinationStop}
+          style={{
+            width: '100%',
+            padding: '0.75rem 1rem',
+            borderRadius: '14px',
+            background: '#f5f3ff',
+            border: '2px dashed #8b5cf6',
+            color: '#6d28d9',
+            fontWeight: 800,
+            fontSize: '0.86rem',
+            cursor: selectedDestinationStop ? 'pointer' : 'not-allowed',
+            opacity: selectedDestinationStop ? 1 : 0.5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            transition: 'all 0.15s ease'
+          }}
+          id="btn-simulate-trip-demo"
+        >
+          <span style={{ background: '#6d28d9', color: '#ffffff', fontSize: '0.68rem', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 900, letterSpacing: '0.04em' }}>DEMO</span>
+          <span>Simulate this trip (Fast Demo Mode)</span>
+          <ArrowRight size={16} style={{ marginLeft: 'auto' }} />
+        </button>
+      </div>
     </div>
   );
 }

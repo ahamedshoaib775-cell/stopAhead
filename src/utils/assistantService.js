@@ -447,38 +447,83 @@ async function planBestWayMultiModal(destQuery, userLat, userLng, cityName, rawQ
 
 /**
  * Clean natural language routing prefixes anchored to start of string (^...)
+ * and trailing mode/noise suffixes
  */
 function extractTargetPlaceName(fullQuery, phrasesToStrip = []) {
   if (!fullQuery) return '';
   let cleaned = fullQuery.trim();
 
+  // 1. Comprehensive list of leading conversational prefixes
   const leadingPrefixes = [
     /^i\s+want\s+to\s+go\s+to\s+/i,
-    /^i\s+need\s+to\s+go\s+to\s+/i,
-    /^i'm\s+going\s+to\s+/i,
-    /^im\s+going\s+to\s+/i,
+    /^i\s+want\s+to\s+go\s+/i,
     /^i\s+want\s+to\s+reach\s+/i,
+    /^i\s+want\s+to\s+visit\s+/i,
+    /^i\s+want\s+to\s+/i,
+    /^i\s+want\s+/i,
+    /^i\s+need\s+to\s+go\s+to\s+/i,
+    /^i\s+need\s+to\s+go\s+/i,
+    /^i\s+need\s+to\s+reach\s+/i,
+    /^i\s+need\s+to\s+/i,
+    /^i\s+need\s+/i,
+    /^i'm\s+going\s+to\s+/i,
+    /^i'm\s+going\s+/i,
+    /^im\s+going\s+to\s+/i,
+    /^im\s+going\s+/i,
+    /^i\s+am\s+going\s+to\s+/i,
+    /^i\s+am\s+going\s+/i,
+    /^going\s+to\s+/i,
+    /^going\s+/i,
     /^how\s+do\s+i\s+get\s+to\s+/i,
+    /^how\s+do\s+i\s+go\s+to\s+/i,
+    /^how\s+do\s+i\s+go\s+/i,
     /^how\s+to\s+get\s+to\s+/i,
+    /^how\s+to\s+go\s+to\s+/i,
+    /^how\s+to\s+go\s+/i,
     /^how\s+to\s+reach\s+/i,
+    /^how\s+can\s+i\s+reach\s+/i,
     /^best\s+way\s+to\s+get\s+to\s+/i,
     /^best\s+way\s+there\s+to\s+/i,
     /^best\s+way\s+to\s+/i,
     /^can\s+you\s+take\s+me\s+to\s+/i,
     /^take\s+me\s+to\s+/i,
+    /^take\s+me\s+/i,
+    /^show\s+route\s+to\s+/i,
+    /^show\s+route\s+for\s+/i,
+    /^show\s+route\s+/i,
     /^directions\s+to\s+/i,
+    /^directions\s+for\s+/i,
     /^route\s+to\s+/i,
+    /^route\s+for\s+/i,
     /^navigate\s+to\s+/i,
     /^way\s+to\s+/i,
     /^path\s+to\s+/i,
     /^travel\s+to\s+/i,
-    /^head\s+to\s+/i,
-    /^go\s+to\s+/i
+    /^heading\s+to\s+/i,
+    /^go\s+to\s+/i,
+    /^reach\s+/i,
+    /^visit\s+/i
   ];
 
   for (const prefix of leadingPrefixes) {
     if (prefix.test(cleaned)) {
       cleaned = cleaned.replace(prefix, '').trim();
+      break;
+    }
+  }
+
+  // 2. Strip trailing mode / noise suffixes ("by bus", "by metro", "using train", "please", etc.)
+  const trailingSuffixes = [
+    /\s+by\s+(?:bus|metro|subway|train|local\s+train)$/i,
+    /\s+using\s+(?:bus|metro|subway|train|local\s+train)$/i,
+    /\s+via\s+(?:bus|metro|subway|train|local\s+train)$/i,
+    /\s+on\s+(?:bus|metro|subway|train|local\s+train)$/i,
+    /\s+please$/i
+  ];
+
+  for (const suffix of trailingSuffixes) {
+    if (suffix.test(cleaned)) {
+      cleaned = cleaned.replace(suffix, '').trim();
       break;
     }
   }

@@ -15,6 +15,15 @@ import CommunityDisruptionModal from './components/CommunityDisruptionModal';
 import StopReportModal from './components/StopReportModal';
 import ChatbotModal from './components/ChatbotModal';
 import BestWayThereModal from './components/BestWayThereModal';
+import RouteSearchScreen from './components/RouteSearchScreen';
+import MapViewScreen from './components/MapViewScreen';
+import RouteDetailScreen from './components/RouteDetailScreen';
+import StopDetailScreen from './components/StopDetailScreen';
+import SetAlertScreen from './components/SetAlertScreen';
+import MyAlertsScreen from './components/MyAlertsScreen';
+import FavoritesScreen from './components/FavoritesScreen';
+import ProfileScreen from './components/ProfileScreen';
+import AdminDashboard from './components/admin/AdminDashboard';
 
 
 import { supabase } from './utils/supabaseClient';
@@ -179,6 +188,11 @@ export default function App() {
       (pos) => {
         const { latitude: lat, longitude: lng, heading: rawHeading } = pos.coords;
 
+        if (typeof window !== 'undefined') {
+          window.stopAheadUserLocation = { lat, lng };
+          window.stopAheadUserPosition = { lat, lng };
+        }
+
         setUserPosition((prev) => {
           let computedHeading = rawHeading;
           if ((computedHeading == null || isNaN(computedHeading)) && prev?.lat && prev?.lng) {
@@ -257,7 +271,7 @@ export default function App() {
   };
 
   // Initialize & Start a Trip
-  const startTrip = async (originStop, destinationStop, thresholdType, thresholdValue, soundId, transportMode = 'bus') => {
+  const startTrip = async (originStop, destinationStop, thresholdType, thresholdValue, soundId, transportMode = 'bus', isSimulated = false) => {
     if (!destinationStop) {
       console.warn('[StopAhead] Cannot start trip: Destination stop is null or undefined.');
       return;
@@ -270,7 +284,7 @@ export default function App() {
       lng: userLocation?.lng || (destinationStop.lng - 0.015)
     };
 
-    console.log('[StopAhead] Starting trip initialization. Mode:', transportMode);
+    console.log('[StopAhead] Starting trip initialization. Mode:', transportMode, 'IsSimulated:', isSimulated);
     console.log('[StopAhead Alarm] State transition: idle (New Trip Initialized)');
 
     const distKm = calculateHaversineDistance(origin.lat, origin.lng, destinationStop.lat, destinationStop.lng) || 2.5;
@@ -279,6 +293,7 @@ export default function App() {
 
     // Construct initial trip state
     const initialTrip = {
+      isSimulated: !!isSimulated,
       originStop: origin,
       destinationStop,
       transportMode: transportMode || 'bus',
@@ -308,7 +323,7 @@ export default function App() {
 
     setActiveTrip(initialTrip);
     setShowArrivalModal(false);
-    setIsSimulating(true);
+    setIsSimulating(!!isSimulated);
     setActiveTab('active-trip');
     triggerVibration('tap');
 
@@ -447,7 +462,7 @@ export default function App() {
 
         const isTripFinished = nextPointIdx >= totalPoints - 1 || newDistLeft <= 0.1;
 
-        if (isTripFinished && user?.id) {
+        if (isTripFinished && user?.id && !prev.isSimulated) {
           recordTripHistory(user.id, prev).then(() => {
             fetchUserTripHistory(user.id).then(setTripHistory);
           });
@@ -678,17 +693,80 @@ export default function App() {
       <main className="main-content">
         {activeTab === 'home' && (
           <HomeScreen
+            userLocation={userLocation}
             activeTrip={activeTrip}
             savedRoutes={savedRoutes}
             tripHistory={tripHistory}
             onStartTrip={startTrip}
             onDeleteSavedRoute={handleDeleteSavedRoute}
             onNavigate={setActiveTab}
-            onExpandFullScreen={() => setIsFullScreenMapOpen(true)}
-            onOpenBestWayThere={() => setIsBestWayThereOpen(true)}
+            user={user}
           />
         )}
 
+        {activeTab === 'search' && (
+          <RouteSearchScreen
+            onNavigate={setActiveTab}
+            onSelectRoute={(routeNo) => setActiveTab('route-detail')}
+          />
+        )}
+
+        {activeTab === 'map' && (
+          <MapViewScreen
+            userLocation={userLocation}
+            onNavigate={setActiveTab}
+            onSelectStop={(stopName) => setActiveTab('stop-detail')}
+          />
+        )}
+
+        {activeTab === 'alerts' && (
+          <MyAlertsScreen
+            onNavigate={setActiveTab}
+          />
+        )}
+
+        {activeTab === 'profile' && (
+          <ProfileScreen
+            user={user}
+            onSignOut={handleSignOut}
+            onNavigate={setActiveTab}
+          />
+        )}
+
+        {activeTab === 'route-detail' && (
+          <RouteDetailScreen
+            routeNo="21G"
+            routeName="Tambaram ↔ Broadway"
+            onNavigate={setActiveTab}
+            onSelectStop={(stopName) => setActiveTab('stop-detail')}
+          />
+        )}
+
+        {activeTab === 'stop-detail' && (
+          <StopDetailScreen
+            onNavigate={setActiveTab}
+            onSelectRoute={(routeNo) => setActiveTab('route-detail')}
+          />
+        )}
+
+        {activeTab === 'set-alert' && (
+          <SetAlertScreen
+            onNavigate={setActiveTab}
+          />
+        )}
+
+        {activeTab === 'favorites' && (
+          <FavoritesScreen
+            onNavigate={setActiveTab}
+            onStartTrip={startTrip}
+          />
+        )}
+
+        {activeTab === 'admin' && (
+          <AdminDashboard
+            onNavigate={setActiveTab}
+          />
+        )}
 
         {activeTab === 'set-destination' && (
           <SetDestinationScreen

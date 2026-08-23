@@ -27,21 +27,32 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
 
 const KNOWN_CHENNAI_LANDMARKS = [
   { name: 'Phoenix Marketcity (Phoenix Mall)', aliases: ['phoenix mall', 'phoenix marketcity', 'phoenix'], lat: 12.9918, lng: 80.2171, description: 'Velachery Main Road, Chennai' },
-  { name: 'Saidapet', aliases: ['saidapet', 'saidapet bus stand'], lat: 13.0232, lng: 80.2238, description: 'Saidapet, Chennai' },
+  { name: 'Saidapet', aliases: ['saidapet', 'saidapet bus stand', 'saidapet station'], lat: 13.0232, lng: 80.2238, description: 'Saidapet, Chennai' },
   { name: 'T. Nagar (Thyagaraya Nagar)', aliases: ['t nagar', 't. nagar', 'thyagaraya nagar'], lat: 13.0418, lng: 80.2341, description: 'T. Nagar, Chennai' },
   { name: 'Marina Beach', aliases: ['marina beach', 'marina', 'light house'], lat: 13.0600, lng: 80.2800, description: 'Kamarajar Salai, Marina Beach' },
   { name: 'Poonamallee', aliases: ['poonamallee', 'poonamallee bus terminus'], lat: 13.0485, lng: 80.0995, description: 'Poonamallee, Chennai' },
-  { name: 'Chennai Central', aliases: ['chennai central', 'central station', 'park town'], lat: 13.0827, lng: 80.2707, description: 'EVR Periyar Salai, Chennai' },
-  { name: 'Guindy', aliases: ['guindy', 'guindy station'], lat: 13.0067, lng: 80.2020, description: 'Guindy, Chennai' },
+  { name: 'Chennai Central', aliases: ['chennai central', 'central station', 'park town', 'central'], lat: 13.0827, lng: 80.2707, description: 'EVR Periyar Salai, Chennai' },
+  { name: 'Guindy', aliases: ['guindy', 'guindy station', 'guindy hub'], lat: 13.0067, lng: 80.2020, description: 'Guindy, Chennai' },
   { name: 'Porur', aliases: ['porur', 'porur junction'], lat: 13.0382, lng: 80.1565, description: 'Porur, Chennai' },
   { name: 'Koyambedu CMBT', aliases: ['koyambedu', 'cmbt'], lat: 13.0694, lng: 80.1948, description: 'CMBT Terminus, Chennai' },
-  { name: 'Broadway Terminus', aliases: ['broadway', 'parrys'], lat: 13.0891, lng: 80.2854, description: 'Broadway, Chennai' }
+  { name: 'Broadway Terminus', aliases: ['broadway', 'parrys'], lat: 13.0891, lng: 80.2854, description: 'Broadway, Chennai' },
+  { name: 'Tambaram', aliases: ['tambaram', 'tambaram bus stand', 'tambaram railway station'], lat: 12.9249, lng: 80.1000, description: 'Tambaram, Chennai' },
+  { name: 'Velachery', aliases: ['velachery', 'velachery station'], lat: 12.9750, lng: 80.2200, description: 'Velachery, Chennai' },
+  { name: 'Anna Nagar', aliases: ['anna nagar', 'anna nagar tower'], lat: 13.0850, lng: 80.2100, description: 'Anna Nagar, Chennai' },
+  { name: 'Chennai Airport', aliases: ['airport', 'chennai airport', 'meenambakkam'], lat: 12.9944, lng: 80.1709, description: 'GST Road, Meenambakkam, Chennai' },
+  { name: 'Adyar', aliases: ['adyar', 'adyar signal'], lat: 13.0012, lng: 80.2565, description: 'Adyar, Chennai' },
+  { name: 'Mylapore', aliases: ['mylapore', 'kapaleeshwarar'], lat: 13.0333, lng: 80.2667, description: 'Mylapore, Chennai' },
+  { name: 'Kelambakkam', aliases: ['kelambakkam', 'sipcot'], lat: 12.7872, lng: 80.2241, description: 'OMR Road, Chennai' },
+  { name: 'Sholinganallur', aliases: ['sholinganallur', 'elcot'], lat: 12.9010, lng: 80.2279, description: 'OMR, Chennai' },
+  { name: 'Chromepet', aliases: ['chromepet', 'chromepet station'], lat: 12.9516, lng: 80.1462, description: 'Chromepet, Chennai' },
+  { name: 'Vadapalani', aliases: ['vadapalani', 'vadapalani metro'], lat: 13.0500, lng: 80.2120, description: 'Vadapalani, Chennai' }
 ];
 
 export function getKnownChennaiLandmarkFallback(query) {
   if (!query) return [];
   const q = query.toLowerCase().trim();
 
+  // Word token matching or direct alias substring match
   const match = KNOWN_CHENNAI_LANDMARKS.find((l) =>
     l.aliases.some((alias) => q === alias || q.includes(alias) || alias.includes(q))
   );
@@ -637,17 +648,26 @@ export async function geocodeCity(cityName) {
 
 /**
  * Calculate Route Polyline & Distance between Coordinates (Free OSRM)
+ * Supports 'foot' / 'walk', 'car' / 'driving', 'bike' routing profiles.
  */
-export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode = 'bus') {
+export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transportMode = 'bus', profile = null) {
   if (!startLat || !startLng || !endLat || !endLng) {
     return { success: false, error: 'Invalid start/end coordinates for routing' };
   }
 
-  const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
-  console.log(`[StopAhead OSRM Routing URL]: ${url}`);
+  // 1. Determine OSRM profile: 'foot' for walking to stops, 'driving' for vehicles
+  let osrmProfile = 'driving';
+  if (profile === 'foot' || profile === 'walk' || transportMode === 'walk' || transportMode === 'foot') {
+    osrmProfile = 'foot';
+  } else if (profile === 'bike' || transportMode === 'bike') {
+    osrmProfile = 'bike';
+  }
+
+  const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+  console.log(`[StopAhead OSRM Routing URL (${osrmProfile})]: ${url}`);
 
   try {
-    const response = await fetchWithTimeout(url, {}, 3500);
+    const response = await fetchWithTimeout(url, {}, 5000);
     if (!response.ok) {
       throw new Error(`OSRM HTTP error ${response.status}: ${response.statusText}`);
     }
@@ -658,46 +678,65 @@ export async function fetchOSRMRoute(startLat, startLng, endLat, endLng, transpo
 
     if (data.routes && data.routes.length > 0) {
       const route = data.routes[0];
-      const distKm = parseFloat((route.distance / 1000).toFixed(1));
+      const distKm = parseFloat((route.distance / 1000).toFixed(2));
 
       let speedKmH = 30;
-      if (transportMode === 'metro' || transportMode === 'subway') speedKmH = 45;
+      if (osrmProfile === 'foot') speedKmH = 4.8;
+      else if (transportMode === 'metro' || transportMode === 'subway') speedKmH = 45;
       else if (transportMode === 'train') speedKmH = 55;
-      else if (transportMode === 'walk') speedKmH = 5;
 
-      const durationMins = Math.max(2, Math.ceil((distKm / speedKmH) * 60));
+      const durationMins = Math.max(1, Math.ceil((distKm / speedKmH) * 60));
+      // Full returned geometry polyline ([lat, lng] array)
       const coordinates = route.geometry.coordinates.map((coord) => [coord[1], coord[0]]);
 
       return {
         success: true,
         distKm,
         durationMins,
-        coordinates
+        coordinates,
+        profile: osrmProfile
       };
     }
     throw new Error('No route geometry returned from OSRM endpoint');
   } catch (err) {
-    console.warn('[StopAhead OSRM] API network error, using straight-line fallback:', err.message);
-
-    const radlat1 = (Math.PI * startLat) / 180;
-    const radlat2 = (Math.PI * endLat) / 180;
-    const theta = startLng - endLng;
-    const radtheta = (Math.PI * theta) / 180;
-    let dist = Math.sin(radlat1) * Math.sin(radlat2) + Math.cos(radlat1) * Math.cos(radlat2) * Math.cos(radtheta);
-    dist = Math.min(1, dist);
-    dist = Math.acos(dist);
-    dist = (dist * 180) / Math.PI;
-    dist = dist * 60 * 1.1515 * 1.609344;
-    const fallbackDist = parseFloat(dist.toFixed(1));
+    console.warn('[StopAhead OSRM] API routing notice:', err.message);
 
     return {
-      success: true,
-      isFallback: true,
-      distKm: fallbackDist,
-      durationMins: Math.max(2, Math.ceil(fallbackDist * 2.2)),
-      coordinates: [[startLat, startLng], [endLat, endLng]]
+      success: false,
+      error: `Could not fetch exact road directions: ${err.message}`,
+      coordinates: []
     };
   }
+}
+
+/**
+ * Combines multiple route leg coordinate arrays into a single continuous, gap-free 2D array of [lat, lng] points.
+ * Ensures the end point of leg N connects smoothly to the start point of leg N+1.
+ */
+export function combineRouteLegs(legs = []) {
+  if (!Array.isArray(legs) || legs.length === 0) return [];
+  const combined = [];
+
+  for (let i = 0; i < legs.length; i++) {
+    const currentLeg = legs[i];
+    if (!Array.isArray(currentLeg) || currentLeg.length === 0) continue;
+
+    if (combined.length === 0) {
+      combined.push(...currentLeg);
+    } else {
+      const lastPoint = combined[combined.length - 1];
+      const firstPoint = currentLeg[0];
+
+      // If gap exists between end of previous leg and start of current leg, push firstPoint
+      if (lastPoint[0] !== firstPoint[0] || lastPoint[1] !== firstPoint[1]) {
+        combined.push(firstPoint);
+      }
+      combined.push(...currentLeg.slice(1));
+    }
+  }
+
+  console.log('[StopAhead Polyline Stitching]: Combined', legs.length, 'legs into', combined.length, 'continuous waypoints');
+  return combined;
 }
 
 /**

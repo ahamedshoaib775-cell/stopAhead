@@ -1,336 +1,267 @@
-// HomeScreen.jsx - Minimal dashboard rendering user's real saved routes & trip history from Supabase DB
-import React from 'react';
-import { MapPin, ArrowRight, Compass, Radio, Bookmark, Trash2, Clock, CheckCircle, Sparkles, Search } from 'lucide-react';
-import { getTransitModeInfo } from './TransitModeSelector';
+// HomeScreen.jsx - Redesigned Clean Light Home Screen connected to Set Destination Engine
+import React, { useState } from 'react';
+import { Search, Navigation, MapPin, ArrowRight, User, Bus, Subtitles as Subways, Train, Layers, Compass, CheckCircle2 } from 'lucide-react';
+import RouteBadge from './common/RouteBadge';
 
 export default function HomeScreen({
+  userLocation,
   activeTrip,
-  savedRoutes = [],
-  tripHistory = [],
-  onStartTrip,
-  onDeleteSavedRoute,
   onNavigate,
-  onExpandFullScreen,
-  onOpenBestWayThere
+  onStartTrip,
+  user
 }) {
-  const safeSavedRoutes = Array.isArray(savedRoutes) ? savedRoutes : [];
-  const safeTripHistory = Array.isArray(tripHistory) ? tripHistory : [];
+  const [fromLocation, setFromLocation] = useState(userLocation?.cityName || 'Current Location');
+  const [toLocation, setToLocation] = useState('');
 
-  const currentHour = new Date().getHours();
-  const isMorning = currentHour >= 6 && currentHour < 12;
-  const isEvening = currentHour >= 16 && currentHour < 21;
-  const suggestedRoute = safeSavedRoutes.length > 0 ? safeSavedRoutes[0] : null;
+  const getTimeGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  const userName = user?.email ? user.email.split('@')[0] : 'Commuter';
+
+  const modeButtons = [
+    { id: 'bus', label: 'Bus', icon: '🚌', count: '154 routes' },
+    { id: 'metro', label: 'Metro', icon: '🚇', count: '2 lines' },
+    { id: 'train', label: 'Train', icon: '🚆', count: 'Express' },
+    { id: 'suburban', label: 'Local Train', icon: '🚉', count: '12 lines' }
+  ];
+
+  const nearbyStops = [
+    { id: 1, name: 'Tambaram Bus Stand', walkTime: '2 min walk', distance: '150m', routes: ['21G', '500', '515', '19B'] },
+    { id: 2, name: 'Chromepet Metro / Bus Station', walkTime: '6 min walk', distance: '450m', routes: ['Blue Line', '21G', '70'] },
+    { id: 3, name: 'Guindy Railway & Transit Hub', walkTime: '10 min walk', distance: '800m', routes: ['MS-TBM', 'Blue Line', '19B'] }
+  ];
+
+  const handleFindRoute = (e) => {
+    if (e) e.preventDefault();
+    if (onNavigate) {
+      onNavigate('set-destination');
+    }
+  };
+
+  const handleModeClick = (modeId) => {
+    try {
+      localStorage.setItem('stopahead_last_transit_mode', modeId);
+    } catch (err) {}
+    if (onNavigate) {
+      onNavigate('set-destination');
+    }
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* Hero Welcome Section */}
-      <div style={{ padding: '0.5rem 0 0 0' }}>
-        <h2 style={{ fontSize: '2.1rem', fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.03em', marginBottom: '0.6rem' }}>
-          Never miss<br />your stop.
-        </h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', fontWeight: 500 }}>
-          Sleep, read, or listen to music. We’ll wake you before arrival.
-        </p>
-      </div>
-
-      {/* Standalone Mode-Agnostic "Best Way There" Search Entry Point */}
-      <div
-        onClick={() => onOpenBestWayThere && onOpenBestWayThere()}
-        style={{
-          background: 'linear-gradient(135deg, rgba(2, 90, 237, 0.15), rgba(124, 58, 237, 0.15))',
-          border: '1px solid rgba(2, 90, 237, 0.35)',
-          borderRadius: '18px',
-          padding: '1rem 1.1rem',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.85rem',
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
-          transition: 'all 0.2s ease'
-        }}
-        id="btn-best-way-there-search"
-      >
-        <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Sparkles size={22} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', color: '#0F172A' }}>
+      {/* Top Greeting Header with Profile Avatar Top-Right */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#025AED', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            STOPAHEAD LIVE TRANSIT
+          </div>
+          <h2 style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', margin: '2px 0 0 0', letterSpacing: '-0.02em' }}>
+            {getTimeGreeting()}, {userName} 👋
+          </h2>
         </div>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            BEST WAY THERE • AUTOMATIC RECOMMENDATION
-          </div>
-          <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)', marginTop: '2px' }}>
-            Where do you want to go?
-          </div>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '1px' }}>
-            Compare Bus, Metro & Train routes automatically
-          </div>
-        </div>
-
-        <ArrowRight size={18} color="var(--accent)" />
-      </div>
-
-      {/* Smart Commute Auto-Suggest Banner */}
-      {(isMorning || isEvening || suggestedRoute) && (!activeTrip || activeTrip.status === 'idle') && (
-        <div
-          className="quiet-card"
+        {/* Profile Avatar Top-Right */}
+        <button
+          type="button"
+          onClick={() => onNavigate && onNavigate('profile')}
           style={{
-            background: 'linear-gradient(135deg, rgba(2, 90, 237, 0.18), rgba(22, 163, 74, 0.12))',
-            border: '1px solid rgba(2, 90, 237, 0.35)'
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #025AED 0%, #3B82F6 100%)',
+            color: '#ffffff',
+            border: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.1rem',
+            fontWeight: 800,
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(2, 90, 237, 0.25)'
           }}
+          title="Profile & Settings"
         >
-          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <Radio size={14} />
-            <span>SMART COMMUTE SUGGESTION</span>
-          </div>
+          {userName.charAt(0).toUpperCase()}
+        </button>
+      </div>
 
-          <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '0.3rem' }}>
-            {suggestedRoute ? suggestedRoute.title || suggestedRoute.destination_name : (isMorning ? 'Morning Commute' : 'Evening Commute')}
-          </div>
-
-          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
-            {suggestedRoute
-              ? `One-tap start for your saved ${suggestedRoute.transport_mode || 'bus'} route.`
-              : (isMorning ? 'Start your daily morning trip to work or school.' : 'Start your evening commute home.')
-            }
-          </div>
-
-          {suggestedRoute ? (
-            <button
-              className="btn-primary"
-              onClick={() => {
-                const destStop = { id: `dest-${suggestedRoute.id}`, name: suggestedRoute.destination_name, lat: suggestedRoute.destination_lat, lng: suggestedRoute.destination_lng };
-                const originStop = suggestedRoute.origin_lat ? { id: `orig-${suggestedRoute.id}`, name: suggestedRoute.origin_name || 'Origin', lat: suggestedRoute.origin_lat, lng: suggestedRoute.origin_lng } : null;
-                onStartTrip(originStop, destStop, suggestedRoute.threshold_type || 'stops', suggestedRoute.threshold_value || 2, null, suggestedRoute.transport_mode || 'bus');
-              }}
-              style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem' }}
-            >
-              <span>Start This Commute Now</span>
-              <ArrowRight size={16} />
-            </button>
-          ) : (
-            <button
-              className="btn-secondary"
-              onClick={() => onNavigate('set-destination')}
-              style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', color: 'var(--accent)', borderColor: 'var(--accent)' }}
-            >
-              <span>Set Route Destination</span>
-              <ArrowRight size={16} />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Main Single CTA Button */}
-      <button
-        className="btn-primary"
-        onClick={() => onNavigate('set-destination')}
-        id="btn-set-your-stop"
+      {/* Prominent "Where do you want to go?" Card */}
+      <div
+        className="glass-card"
+        style={{
+          padding: '1.25rem',
+          background: '#FFFFFF',
+          borderRadius: '24px',
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 8px 30px rgba(15, 23, 42, 0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem'
+        }}
       >
-        <MapPin size={20} />
-        <span>Set Your Stop (Manual Mode)</span>
-        <ArrowRight size={18} style={{ marginLeft: 'auto' }} />
-      </button>
+        <div style={{ fontWeight: 800, fontSize: '1.15rem', color: '#0F172A', letterSpacing: '-0.01em' }}>
+          Where do you want to go?
+        </div>
 
-
-      {/* Active Trip Status Card (If active) */}
-      {activeTrip && activeTrip.status !== 'idle' ? (
-        <div
-          className={`quiet-card ${activeTrip.isApproaching ? 'active-accent' : ''}`}
-          onClick={() => onNavigate('active-trip')}
-          style={{ cursor: 'pointer' }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              {activeTrip.isApproaching ? 'Approaching Destination' : 'Active Trip'}
-            </span>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Live Tracking
-            </span>
-          </div>
-
-          <div style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.75rem' }}>
-            {activeTrip.destinationStop.name}
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.75rem' }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-              {activeTrip.stopsRemaining} <span style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)' }}>stops left</span>
-            </div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              ~{Math.ceil(activeTrip.timeRemainingMins)} min
-            </div>
-          </div>
-
-          {/* Thin quiet progress line */}
-          <div style={{ height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
-            <div
-              style={{
-                height: '100%',
-                width: `${activeTrip.progressPercent}%`,
-                background: 'var(--accent)',
-                transition: 'width 0.3s ease'
-              }}
+        <form onSubmit={handleFindRoute} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {/* From Input */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.95rem', borderRadius: '14px', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            <MapPin size={18} color="#16A34A" />
+            <input
+              type="text"
+              value={fromLocation}
+              onChange={(e) => setFromLocation(e.target.value)}
+              placeholder="From: Current Location"
+              style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', fontWeight: 700, fontSize: '0.9rem', color: '#0F172A' }}
             />
           </div>
-        </div>
-      ) : (
+
+          {/* To Input */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.95rem', borderRadius: '14px', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            <Navigation size={18} color="#025AED" />
+            <input
+              type="text"
+              value={toLocation}
+              onChange={(e) => setToLocation(e.target.value)}
+              onFocus={() => onNavigate && onNavigate('set-destination')}
+              placeholder="To: Enter destination station or place..."
+              style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', fontWeight: 700, fontSize: '0.9rem', color: '#0F172A' }}
+            />
+          </div>
+
+          {/* Find Route Primary Button */}
+          <button
+            type="submit"
+            className="btn-primary"
+            style={{
+              width: '100%',
+              padding: '0.85rem',
+              fontSize: '0.92rem',
+              borderRadius: '16px',
+              background: '#025AED',
+              color: '#ffffff',
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 4px 16px rgba(2, 90, 237, 0.25)'
+            }}
+          >
+            <span>Find Route</span>
+            <ArrowRight size={18} />
+          </button>
+        </form>
+      </div>
+
+      {/* Active Trip Quick Access Card (If active trip is running) */}
+      {activeTrip && (
         <div
-          className="quiet-card interactive"
-          onClick={() => onExpandFullScreen && onExpandFullScreen()}
-          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+          className="glass-card glass-card-interactive"
+          onClick={() => onNavigate && onNavigate('active-trip')}
+          style={{
+            padding: '1.1rem',
+            background: 'linear-gradient(135deg, rgba(2, 90, 237, 0.08) 0%, #FFFFFF 100%)',
+            border: '2px solid #025AED',
+            borderRadius: '22px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer'
+          }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
-            <Radio size={24} color="var(--accent)" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ width: '42px', height: '42px', borderRadius: '14px', background: '#025AED', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Navigation size={22} />
+            </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Full-Screen Navigation Map</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Tap to launch OpenStreetMap full-screen live tracking
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#025AED', textTransform: 'uppercase' }}>TRIP IN PROGRESS</div>
+              <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A' }}>
+                {activeTrip.destinationStop?.name || 'Live Route Tracking'}
               </div>
             </div>
           </div>
-          <ArrowRight size={18} color="var(--text-muted)" />
+
+          <ArrowRight size={18} color="#025AED" />
         </div>
       )}
 
-      {/* Saved Favorite Routes Section */}
+      {/* Quick Search 4-Mode Row */}
       <div>
-        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Bookmark size={14} color="var(--accent)" />
-          <span>My Saved Favorite Routes ({safeSavedRoutes.length})</span>
+        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.65rem' }}>
+          EXPLORE TRANSIT MODES
         </div>
-
-        {safeSavedRoutes.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {safeSavedRoutes.map((route, idx) => {
-              const modeInfo = getTransitModeInfo(route.transport_mode || 'bus');
-              const RouteIcon = modeInfo?.icon || Bookmark;
-
-              return (
-                <div
-                  key={route.id ? `${route.id}-${idx}` : idx}
-                  className="quiet-card interactive"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.9rem 1.1rem' }}
-                >
-                  <div
-                    onClick={() => {
-                      const destStop = {
-                        id: `dest-${route.id}`,
-                        name: route.destination_name,
-                        lat: route.destination_lat,
-                        lng: route.destination_lng
-                      };
-                      const originStop = route.origin_lat && route.origin_lng ? {
-                        id: `orig-${route.id}`,
-                        name: route.origin_name || 'Origin',
-                        lat: route.origin_lat,
-                        lng: route.origin_lng
-                      } : null;
-
-                      onStartTrip(originStop, destStop, route.threshold_type || 'stops', route.threshold_value || 2, null, route.transport_mode || 'bus');
-                    }}
-                    style={{ flex: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                  >
-                    <div
-                      style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '10px',
-                        background: 'rgba(2, 90, 237, 0.12)',
-                        border: '1px solid rgba(2, 90, 237, 0.3)',
-                        color: 'var(--accent)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0
-                      }}
-                    >
-                      <RouteIcon size={18} />
-                    </div>
-
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                        {route.title || route.destination_name}
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                        {modeInfo?.label || 'Bus'} • To: {route.destination_name}
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteSavedRoute(route.id);
-                    }}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.4rem' }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div
-            style={{
-              padding: '1rem',
-              borderRadius: 'var(--radius-md)',
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px dashed var(--border-color)',
-              fontSize: '0.82rem',
-              color: 'var(--text-muted)',
-              textAlign: 'center'
-            }}
-          >
-            No saved routes yet. Search any destination and tap ⭐ Save to My Routes to bookmark your daily commutes here.
-          </div>
-        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.55rem' }}>
+          {modeButtons.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => handleModeClick(m.id)}
+              style={{
+                padding: '0.85rem 0.4rem',
+                borderRadius: '18px',
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '0.35rem',
+                cursor: 'pointer'
+              }}
+            >
+              <span style={{ fontSize: '1.4rem' }}>{m.icon}</span>
+              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0F172A' }}>{m.label}</span>
+              <span style={{ fontSize: '0.68rem', color: '#64748B', fontWeight: 600 }}>{m.count}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Recent Trip History */}
-      {safeTripHistory.length > 0 && (
-        <div>
-          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Clock size={14} color="var(--accent)" />
-            <span>Recent Trip History</span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {safeTripHistory.slice(0, 3).map((item, idx) => {
-              const modeInfo = getTransitModeInfo(item.transport_mode || 'bus');
-              const HistoryIcon = modeInfo?.icon || Clock;
-
-              return (
-                <div
-                  key={item.id ? `${item.id}-${idx}` : idx}
-                  style={{
-                    padding: '0.75rem 0.9rem',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid var(--border-color)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                    <HistoryIcon size={16} color="var(--accent)" />
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{item.destination_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{modeInfo?.label || 'Bus'} • From {item.origin_name}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: 'var(--accent)' }}>
-                    <CheckCircle size={13} />
-                    <span>{item.status}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      {/* Nearby Stops List */}
+      <div className="glass-card" style={{ padding: '1.25rem', background: '#FFFFFF', borderRadius: '24px', border: '1px solid #E2E8F0', boxShadow: '0 4px 20px rgba(15, 23, 42, 0.04)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>Nearby Stops</span>
+          <span style={{ fontSize: '0.78rem', color: '#025AED', fontWeight: 700, cursor: 'pointer' }} onClick={() => onNavigate && onNavigate('map')}>View Map ➔</span>
         </div>
-      )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {nearbyStops.map((stop) => (
+            <div
+              key={stop.id}
+              onClick={() => onNavigate && onNavigate('set-destination')}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.45rem',
+                padding: '0.85rem 0.95rem',
+                borderRadius: '18px',
+                background: '#F8FAFC',
+                border: '1px solid #F1F5F9',
+                cursor: 'pointer'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#0F172A' }}>{stop.name}</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: 600 }}>{stop.walkTime}</div>
+              </div>
+
+              {/* Route Badges Served at That Stop */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                {stop.routes.map((r) => (
+                  <RouteBadge key={r} routeNo={r} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
