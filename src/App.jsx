@@ -24,6 +24,7 @@ import MyAlertsScreen from './components/MyAlertsScreen';
 import FavoritesScreen from './components/FavoritesScreen';
 import ProfileScreen from './components/ProfileScreen';
 import AdminDashboard from './components/admin/AdminDashboard';
+import DemoInvestorScreen from './components/DemoInvestorScreen';
 
 
 import { supabase } from './utils/supabaseClient';
@@ -39,6 +40,34 @@ import { Loader2, Bot, MessageSquare } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
+
+  // URL Path listener for standalone investor pitch demo (/demo or #demo)
+  const isDemoUrl = typeof window !== 'undefined' && (
+    window.location.pathname === '/demo' ||
+    window.location.pathname.startsWith('/demo') ||
+    window.location.hash === '#demo' ||
+    window.location.hash === '#/demo'
+  );
+
+  const [currentPath, setCurrentPath] = useState(() => isDemoUrl ? '/demo' : window.location.pathname);
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const isDemo = window.location.pathname === '/demo' ||
+        window.location.pathname.startsWith('/demo') ||
+        window.location.hash === '#demo' ||
+        window.location.hash === '#/demo';
+      if (isDemo) {
+        setCurrentPath('/demo');
+      }
+    };
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
 
   // Supabase Authentication State
   const [user, setUser] = useState(null);
@@ -483,7 +512,7 @@ export default function App() {
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [activeTrip?.status, activeTrip?.alarmState, isSimulating, simSpeed, user?.id]);
+  }, [activeTrip, activeTrip?.status, activeTrip?.alarmState, isSimulating, simSpeed, user?.id, settings.voiceAlertsEnabled, settings.language, userLocation?.lat, userLocation?.lng]);
 
   // Handle Manual Dismiss Alarm Action (Immediate Kill Switch)
   const handleDismissAlarm = () => {
@@ -657,6 +686,11 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  // Standalone Investor Pitch Demo Route (/demo or #demo) - No Login / Auth Guard Required
+  if (currentPath === '/demo' || activeTab === 'demo') {
+    return <DemoInvestorScreen />;
   }
 
   // 2. Auth Guard: Unauthenticated Users see AuthScreen (unless Guest Mode active)

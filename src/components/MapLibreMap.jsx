@@ -579,7 +579,7 @@ export default function MapLibreMap({
     } else if (allBoundsPoints.length === 1) {
       map.panTo(allBoundsPoints[0], { animate: true });
     }
-  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, targetPlaceCoords, targetPlaceName, tileStyle]);
+  }, [originCoords, destCoords, currentCoords, heading, stops, routeCoordinates, transportMode, targetPlaceCoords, targetPlaceName, tileStyle, activePosition]);
 
   const handleZoomIn = (e) => {
     e.stopPropagation();
