@@ -292,12 +292,22 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setActiveTrip(null);
-    setSavedRoutes([]);
-    setTripHistory([]);
+    console.log('[StopAhead Auth] Logging out user...');
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[StopAhead Auth] Notice signing out from Supabase:', err);
+    } finally {
+      setUser(null);
+      setSession(null);
+      setActiveTrip(null);
+      setSavedRoutes([]);
+      setTripHistory([]);
+      setIsGuestMode(false);
+      localStorage.removeItem('stopahead_guest_mode');
+      setActiveTab('home');
+      console.log('[StopAhead Auth] Log out complete. Returned to AuthScreen.');
+    }
   };
 
   // Initialize & Start a Trip
