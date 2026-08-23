@@ -25,6 +25,7 @@ import FavoritesScreen from './components/FavoritesScreen';
 import ProfileScreen from './components/ProfileScreen';
 import AdminDashboard from './components/admin/AdminDashboard';
 import DemoInvestorScreen from './components/DemoInvestorScreen';
+import OtpSuccessAnimation from './components/OtpSuccessAnimation';
 
 
 import { supabase } from './utils/supabaseClient';
@@ -73,6 +74,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [showAuthSuccessAnimation, setShowAuthSuccessAnimation] = useState(false);
 
   // User-Scoped Database State
   const [savedRoutes, setSavedRoutes] = useState([]);
@@ -156,8 +158,12 @@ export default function App() {
           }
         });
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
         if (isMounted) {
+          if (event === 'SIGNED_IN' && currentSession?.user) {
+            console.log('[StopAhead Auth] User authenticated via Magic Link! Triggering success animation...');
+            setShowAuthSuccessAnimation(true);
+          }
           setSession(currentSession);
           setUser(currentSession?.user ?? null);
           setAuthLoading(false);
@@ -725,6 +731,11 @@ export default function App() {
   // 3. Main Authenticated Application Views
   return (
     <div className="app-wrapper">
+      {/* Full-Screen Branded Success Celebration Animation on Magic Link Authentication */}
+      {showAuthSuccessAnimation && (
+        <OtpSuccessAnimation onComplete={() => setShowAuthSuccessAnimation(false)} />
+      )}
+
       {/* Top Header */}
       <Header
         activeTrip={activeTrip}

@@ -1,32 +1,22 @@
-// AuthScreen.jsx - StopAhead Email OTP Signup & Login Flow with Branded Success Animation
-import React, { useState, useEffect, useRef } from 'react';
-import { Mail, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, RefreshCw, Edit3 } from 'lucide-react';
+// AuthScreen.jsx - StopAhead Magic Link Authentication Flow
+import React, { useState, useEffect } from 'react';
+import { Mail, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, RefreshCw, Edit3, MailCheck } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
-import { syncUserProfile } from '../utils/dbService';
-import OtpSuccessAnimation from './OtpSuccessAnimation';
 
 export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
   // Navigation & Flow state
   const [authMode, setAuthMode] = useState('signup'); // 'signup' | 'login'
-  const [step, setStep] = useState(1); // 1: Email & Name Form, 2: OTP Verification Screen
+  const [step, setStep] = useState(1); // 1: Input Form, 2: Magic Link Sent Confirmation
 
-  // Form Input States (Email Only - Phone auth removed completely)
+  // Form Input States
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-
-  // Step 2 OTP State (6 individual digit boxes)
-  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
-  const otpInputRefs = useRef([]);
 
   // UI Feedback States
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-
-  // Part 2: Success Animation & Auth Session Cache
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
-  const [authDataCache, setAuthDataCache] = useState(null);
 
   // Resend Cooldown Timer (45 seconds)
   const [cooldown, setCooldown] = useState(0);
@@ -44,7 +34,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
   // Email format validation helper
   const isValidEmail = (str) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str.trim());
 
-  // Masking helper for privacy on Step 2 OTP Screen
+  // Masking helper for privacy on confirmation screen
   const getMaskedEmail = () => {
     const parts = email.trim().split('@');
     if (parts.length !== 2) return email;
@@ -53,8 +43,8 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
     return `${maskedName}@${parts[1]}`;
   };
 
-  // Step 1 Submit: Validate Email & Names, then Trigger Email OTP
-  const handleSendOtp = async (e) => {
+  // Step 1 Submit: Validate & Trigger Magic Link via Supabase Auth
+  const handleSendMagicLink = async (e) => {
     if (e) e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
@@ -82,10 +72,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
     setIsLoading(true);
 
     try {
-      console.log(`[StopAhead Auth] Sending Email OTP to ${trimmedEmail}...`);
+      console.log(`[StopAhead Auth] Sending Magic Link to ${trimmedEmail}...`);
       const { error } = await supabase.auth.signInWithOtp({
         email: trimmedEmail,
         options: {
+          emailRedirectTo: window.location.origin,
           data: {
             first_name: firstName.trim(),
             last_name: lastName.trim()
@@ -94,120 +85,24 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
       });
 
       if (error) {
-        console.warn('[StopAhead Email OTP Error]:', error);
+        console.warn('[StopAhead Magic Link Error]:', error);
         const msg = error.message || '';
         if (msg.toLowerCase().includes('rate limit')) {
           setErrorMessage('Too many requests. Please wait a minute before retrying.');
         } else {
-          setErrorMessage(msg || 'Could not send verification code. Please check your email address.');
+          setErrorMessage(msg || 'Could not send sign-in link. Please check your email address.');
         }
       } else {
-        console.log('[StopAhead Auth] Email OTP Code Sent Successfully!');
-        setSuccessMessage(`Verification code sent to ${getMaskedEmail()}`);
+        console.log('[StopAhead Auth] Magic Link Sent Successfully!');
+        setSuccessMessage(`Sign-in link sent to ${getMaskedEmail()}`);
         setStep(2);
         setCooldown(45);
-        setOtpDigits(['', '', '', '', '', '']);
-        setTimeout(() => {
-          if (otpInputRefs.current[0]) otpInputRefs.current[0].focus();
-        }, 100);
       }
     } catch (err) {
       console.error('[StopAhead Auth Exception]:', err);
       setErrorMessage('An unexpected network error occurred. Please try again.');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Step 2 OTP Digit Box Handlers
-  const handleOtpDigitChange = (index, value) => {
-    const cleanVal = value.replace(/\D/g, '').slice(-1);
-    const newDigits = [...otpDigits];
-    newDigits[index] = cleanVal;
-    setOtpDigits(newDigits);
-
-    // Auto-advance focus to next input
-    if (cleanVal && index < 5 && otpInputRefs.current[index + 1]) {
-      otpInputRefs.current[index + 1].focus();
-    }
-  };
-
-  const handleOtpKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0 && otpInputRefs.current[index - 1]) {
-      otpInputRefs.current[index - 1].focus();
-    }
-  };
-
-  const handleOtpPaste = (e) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (pasted) {
-      const newDigits = [...otpDigits];
-      for (let i = 0; i < 6; i++) {
-        newDigits[i] = pasted[i] || '';
-      }
-      setOtpDigits(newDigits);
-      const nextFocus = Math.min(pasted.length, 5);
-      if (otpInputRefs.current[nextFocus]) otpInputRefs.current[nextFocus].focus();
-    }
-  };
-
-  // Step 2 Submit: Verify 6-digit OTP code & trigger success animation
-  const handleVerifyOtp = async (e) => {
-    if (e) e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    const otpCode = otpDigits.join('');
-    if (otpCode.length !== 6) {
-      setErrorMessage('Please enter the full 6-digit verification code.');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: email.trim(),
-        token: otpCode,
-        type: 'email'
-      });
-
-      if (error) {
-        console.warn('[StopAhead OTP Verification Error]:', error);
-        if (error.message.toLowerCase().includes('expired')) {
-          setErrorMessage('Verification code expired. Tap Resend Code below for a new one.');
-        } else {
-          setErrorMessage('Incorrect verification code. Please check and try again.');
-        }
-      } else if (data?.user) {
-        console.log('[StopAhead Auth] OTP Verification Success! Triggering success animation...');
-
-        // 1. Instant Green Feedback (0-0.2s)
-        setIsOtpVerified(true);
-
-        // Sync first_name, last_name, email to DB profile table
-        await syncUserProfile(data.user, {
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          email: email.trim()
-        });
-
-        // Store session data to navigate after animation finishes
-        setAuthDataCache({ user: data.user, session: data.session });
-      }
-    } catch (err) {
-      console.error('[StopAhead OTP Verification Exception]:', err);
-      setErrorMessage('Network error verifying code. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Callback when OtpSuccessAnimation finishes (~2.5s)
-  const handleAnimationComplete = () => {
-    if (authDataCache && onAuthSuccess) {
-      onAuthSuccess(authDataCache.user, authDataCache.session);
     }
   };
 
@@ -223,11 +118,6 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
         color: '#0f172a'
       }}
     >
-      {/* Full-Screen Branded Success Animation takeover on correct OTP */}
-      {isOtpVerified && (
-        <OtpSuccessAnimation onComplete={handleAnimationComplete} />
-      )}
-
       {/* Brand Header with Official StopAhead Logo */}
       <div style={{ textAlign: 'center', marginBottom: '1.5rem', width: '100%', maxWidth: '380px' }}>
         <div
@@ -259,17 +149,17 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
 
         <h1 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
           {step === 2
-            ? 'Verify Verification Code'
+            ? 'Check Your Email'
             : authMode === 'signup'
             ? 'Create your StopAhead Account'
             : 'Welcome Back'}
         </h1>
         <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0.35rem 0 0 0' }}>
           {step === 2
-            ? `Enter the 6-digit code sent to ${getMaskedEmail()}`
+            ? `We sent a magic sign-in link to ${getMaskedEmail()}`
             : authMode === 'signup'
-            ? 'Sign up with Email OTP for smart proximity transit alerts'
-            : 'Enter your email address to receive a 6-digit sign-in code'}
+            ? 'Sign up with instant magic link authentication'
+            : 'Enter your email address to receive a magic sign-in link'}
         </p>
       </div>
 
@@ -288,9 +178,9 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
           gap: '1.1rem'
         }}
       >
-        {/* Step 1: Sign Up / Sign In Email Form */}
+        {/* Step 1: Sign Up / Sign In Form */}
         {step === 1 && (
-          <form onSubmit={handleSendOtp} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <form onSubmit={handleSendMagicLink} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             
             {/* Mode Switcher Tabs (Sign Up vs Sign In) */}
             <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '12px', padding: '0.25rem' }}>
@@ -434,7 +324,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
               </div>
             )}
 
-            {/* Submit Send OTP Button */}
+            {/* Submit Send Magic Link Button */}
             <button
               type="submit"
               disabled={isLoading}
@@ -460,11 +350,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
               {isLoading ? (
                 <>
                   <Loader2 size={18} className="spin" />
-                  <span>Sending Email OTP...</span>
+                  <span>Sending Magic Link...</span>
                 </>
               ) : (
                 <>
-                  <span>Send Verification Code</span>
+                  <span>Send Magic Link</span>
                   <ArrowRight size={18} />
                 </>
               )}
@@ -472,20 +362,38 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
           </form>
         )}
 
-        {/* Step 2: 6-Digit OTP Verification Entry Screen */}
+        {/* Step 2: Magic Link Sent Confirmation Screen */}
         {step === 2 && (
-          <form onSubmit={handleVerifyOtp} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-            
-            {/* Masked Email Summary & Edit Back Button */}
-            <div style={{ background: '#f8fafc', padding: '0.75rem 0.9rem', borderRadius: '14px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
-                  Code sent to
-                </div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0f172a' }}>
-                  {getMaskedEmail()}
-                </div>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', textAlign: 'center', padding: '0.5rem 0' }}>
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(2, 90, 237, 0.1)',
+                color: '#025AED',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto'
+              }}
+            >
+              <MailCheck size={32} />
+            </div>
+
+            <div>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.4rem 0' }}>
+                Magic Link Dispatched!
+              </h3>
+              <p style={{ fontSize: '0.88rem', color: '#475569', margin: 0, lineHeight: 1.5 }}>
+                We sent an instant sign-in link to <strong>{email.trim()}</strong>. Open your email inbox and tap the link to complete authentication.
+              </p>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: '14px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>
+                Sent to: <strong>{getMaskedEmail()}</strong>
+              </span>
 
               <button
                 type="button"
@@ -503,123 +411,27 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                 }}
               >
                 <Edit3 size={14} />
-                <span>Edit Email</span>
+                <span>Edit</span>
               </button>
             </div>
 
-            {/* 6 Individual Digit OTP Input Boxes with Green Success Glow on Correct Code */}
+            {/* Resend Link with Cooldown Timer */}
             <div>
-              <label style={{ fontSize: '0.78rem', fontWeight: 800, color: '#334155', marginBottom: '0.5rem', display: 'block', textAlign: 'center' }}>
-                Enter 6-Digit Verification Code
-              </label>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.4rem' }}>
-                {otpDigits.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={(el) => (otpInputRefs.current[idx] = el)}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleOtpDigitChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                    onPaste={handleOtpPaste}
-                    style={{
-                      width: '46px',
-                      height: '52px',
-                      borderRadius: '12px',
-                      border: isOtpVerified
-                        ? '2px solid #10B981'
-                        : digit
-                        ? '2px solid #025AED'
-                        : '1px solid #cbd5e1',
-                      background: isOtpVerified
-                        ? 'rgba(16, 185, 129, 0.15)'
-                        : digit
-                        ? 'rgba(2, 90, 237, 0.05)'
-                        : '#ffffff',
-                      textAlign: 'center',
-                      fontSize: '1.25rem',
-                      fontWeight: 800,
-                      color: isOtpVerified ? '#10B981' : '#0f172a',
-                      outline: 'none',
-                      transition: 'all 0.2s ease',
-                      boxShadow: isOtpVerified ? '0 0 12px rgba(16, 185, 129, 0.4)' : 'none'
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Success Message Banner */}
-            {successMessage && !isOtpVerified && (
-              <div style={{ padding: '0.65rem 0.85rem', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', color: '#059669', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <CheckCircle2 size={16} />
-                <span>{successMessage}</span>
-              </div>
-            )}
-
-            {/* Error Message Banner */}
-            {errorMessage && (
-              <div style={{ padding: '0.75rem 0.9rem', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#dc2626', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: '0.45rem', lineHeight: 1.4 }}>
-                <AlertCircle size={16} style={{ marginTop: '2px', flexShrink: 0 }} />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            {/* Submit Verification Button */}
-            <button
-              type="submit"
-              disabled={isLoading || otpDigits.join('').length < 6}
-              style={{
-                width: '100%',
-                padding: '0.85rem 1rem',
-                borderRadius: '14px',
-                background: '#025AED',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 800,
-                fontSize: '0.95rem',
-                cursor: isLoading || otpDigits.join('').length < 6 ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
-                boxShadow: '0 4px 14px rgba(2, 90, 237, 0.35)',
-                opacity: isLoading || otpDigits.join('').length < 6 ? 0.6 : 1
-              }}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 size={18} className="spin" />
-                  <span>Verifying Code...</span>
-                </>
-              ) : (
-                <>
-                  <span>Verify & Sign In</span>
-                  <CheckCircle2 size={18} />
-                </>
-              )}
-            </button>
-
-            {/* Resend Code with Cooldown Timer */}
-            <div style={{ textAlign: 'center', marginTop: '0.2rem' }}>
               {cooldown > 0 ? (
                 <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
-                  Resend code in <strong>{cooldown}s</strong>
+                  Resend magic link in <strong>{cooldown}s</strong>
                 </span>
               ) : (
                 <button
                   type="button"
-                  onClick={handleSendOtp}
+                  onClick={handleSendMagicLink}
                   disabled={isLoading}
                   style={{
                     background: 'none',
                     border: 'none',
                     color: '#025AED',
                     fontWeight: 800,
-                    fontSize: '0.82rem',
+                    fontSize: '0.84rem',
                     cursor: 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -627,11 +439,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                   }}
                 >
                   <RefreshCw size={14} />
-                  <span>Resend Verification Code</span>
+                  <span>Resend Magic Link</span>
                 </button>
               )}
             </div>
-          </form>
+          </div>
         )}
 
         {/* Divider line */}
