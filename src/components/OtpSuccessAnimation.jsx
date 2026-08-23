@@ -58,7 +58,8 @@ export default function OtpSuccessAnimation({ onComplete }) {
         position: 'fixed',
         inset: 0,
         zIndex: 99999,
-        background: '#ffffff',
+        background: 'var(--bg-primary, #0b0e14)',
+        color: 'var(--text-primary)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -180,10 +181,10 @@ export default function OtpSuccessAnimation({ onComplete }) {
             opacity: stage >= 3 ? 1 : 0
           }}
         >
-          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
             Never Miss Your Stop
           </div>
-          <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px', fontWeight: 600 }}>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px', fontWeight: 600 }}>
             Account verified • Ready for your journey
           </div>
         </div>

@@ -23,7 +23,6 @@ import SetAlertScreen from './components/SetAlertScreen';
 import MyAlertsScreen from './components/MyAlertsScreen';
 import FavoritesScreen from './components/FavoritesScreen';
 import ProfileScreen from './components/ProfileScreen';
-import AdminDashboard from './components/admin/AdminDashboard';
 import DemoInvestorScreen from './components/DemoInvestorScreen';
 import OtpSuccessAnimation from './components/OtpSuccessAnimation';
 
@@ -101,7 +100,7 @@ export default function App() {
       alertSound: 'chime',
       defaultThresholdType: 'stops',
       defaultThresholdValue: 2,
-      themeMode: 'light',
+      themeMode: 'dark',
       isHighContrast: false,
       fontSizeScale: 'standard',
       gpsMode: 'simulated',
@@ -815,12 +814,6 @@ export default function App() {
           <FavoritesScreen
             onNavigate={setActiveTab}
             onStartTrip={startTrip}
-          />
-        )}
-
-        {activeTab === 'admin' && (
-          <AdminDashboard
-            onNavigate={setActiveTab}
           />
         )}
 

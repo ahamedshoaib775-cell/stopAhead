@@ -116,23 +116,23 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
         justifyContent: 'center',
         minHeight: '85vh',
         padding: '1.25rem 0',
-        color: '#0f172a'
+        color: 'var(--text-primary)'
       }}
     >
       {/* Brand Header with Official StopAhead Logo */}
       <div style={{ textAlign: 'center', marginBottom: '1.5rem', width: '100%', maxWidth: '380px' }}>
         <div
           style={{
-            background: '#ffffff',
+            background: 'var(--bg-card)',
             padding: '1.4rem 1.25rem 1.25rem 1.25rem',
             borderRadius: '24px',
-            boxShadow: '0 12px 36px rgba(15, 23, 42, 0.1)',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.3)',
             display: 'inline-flex',
             justifyContent: 'center',
             alignItems: 'center',
             margin: '0 auto 1rem auto',
             width: '100%',
-            border: '1px solid #e2e8f0'
+            border: '1px solid var(--border-color)'
           }}
         >
           <img
@@ -148,14 +148,14 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
           />
         </div>
 
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
           {step === 2
             ? 'Check Your Email'
             : authMode === 'signup'
             ? 'Create your StopAhead Account'
             : 'Welcome Back'}
         </h1>
-        <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0.35rem 0 0 0' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0.35rem 0 0 0' }}>
           {step === 2
             ? `We sent a magic sign-in link to ${getMaskedEmail()}`
             : authMode === 'signup'
@@ -169,10 +169,10 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
         style={{
           width: '100%',
           maxWidth: '380px',
-          background: '#ffffff',
+          background: 'var(--bg-card)',
           borderRadius: '24px',
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 10px 30px rgba(15, 23, 42, 0.08)',
+          border: '1px solid var(--border-color)',
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)',
           padding: '1.5rem',
           display: 'flex',
           flexDirection: 'column',
@@ -184,7 +184,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
           <form onSubmit={handleSendMagicLink} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             
             {/* Mode Switcher Tabs (Sign Up vs Sign In) */}
-            <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '12px', padding: '0.25rem' }}>
+            <div style={{ display: 'flex', background: 'var(--bg-surface)', borderRadius: '12px', padding: '0.25rem', border: '1px solid var(--border-color)' }}>
               <button
                 type="button"
                 onClick={() => { setAuthMode('signup'); setErrorMessage(''); }}
@@ -193,12 +193,12 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                   padding: '0.55rem',
                   borderRadius: '10px',
                   border: 'none',
-                  background: authMode === 'signup' ? '#ffffff' : 'transparent',
-                  color: authMode === 'signup' ? '#025AED' : '#64748b',
+                  background: authMode === 'signup' ? 'var(--bg-card)' : 'transparent',
+                  color: authMode === 'signup' ? 'var(--accent)' : 'var(--text-secondary)',
                   fontWeight: 800,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
-                  boxShadow: authMode === 'signup' ? '0 2px 8px rgba(0,0,0,0.06)' : 'none',
+                  boxShadow: authMode === 'signup' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -212,12 +212,12 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                   padding: '0.55rem',
                   borderRadius: '10px',
                   border: 'none',
-                  background: authMode === 'login' ? '#ffffff' : 'transparent',
-                  color: authMode === 'login' ? '#025AED' : '#64748b',
+                  background: authMode === 'login' ? 'var(--bg-card)' : 'transparent',
+                  color: authMode === 'login' ? 'var(--accent)' : 'var(--text-secondary)',
                   fontWeight: 800,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
-                  boxShadow: authMode === 'login' ? '0 2px 8px rgba(0,0,0,0.06)' : 'none',
+                  boxShadow: authMode === 'login' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -229,11 +229,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
             {authMode === 'signup' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
                 <div>
-                  <label style={{ fontSize: '0.76rem', fontWeight: 800, color: '#334155', marginBottom: '0.35rem', display: 'block' }}>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: '0.35rem', display: 'block' }}>
                     First Name *
                   </label>
                   <div style={{ position: 'relative' }}>
-                    <User size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 13 }} />
+                    <User size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 13 }} />
                     <input
                       type="text"
                       placeholder="Shoaib"
@@ -244,17 +244,18 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                         width: '100%',
                         padding: '0.7rem 0.75rem 0.7rem 2.3rem',
                         borderRadius: '12px',
-                        border: '1px solid #cbd5e1',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-surface)',
                         fontSize: '0.88rem',
                         outline: 'none',
-                        color: '#0f172a'
+                        color: 'var(--text-primary)'
                       }}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '0.76rem', fontWeight: 800, color: '#334155', marginBottom: '0.35rem', display: 'block' }}>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: '0.35rem', display: 'block' }}>
                     Last Name *
                   </label>
                   <input
@@ -267,10 +268,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                       width: '100%',
                       padding: '0.7rem 0.75rem',
                       borderRadius: '12px',
-                      border: '1px solid #cbd5e1',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-surface)',
                       fontSize: '0.88rem',
                       outline: 'none',
-                      color: '#0f172a'
+                      color: 'var(--text-primary)'
                     }}
                   />
                 </div>
@@ -279,11 +281,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
 
             {/* Email Address Input */}
             <div>
-              <label style={{ fontSize: '0.76rem', fontWeight: 800, color: '#334155', marginBottom: '0.35rem', display: 'block' }}>
+              <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: '0.35rem', display: 'block' }}>
                 Email Address *
               </label>
               <div style={{ position: 'relative' }}>
-                <Mail size={16} color="#94a3b8" style={{ position: 'absolute', left: 14, top: 14 }} />
+                <Mail size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 14 }} />
                 <input
                   type="email"
                   placeholder="e.g. shoaib@stopahead.app"
@@ -294,10 +296,11 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
                     width: '100%',
                     padding: '0.75rem 1rem 0.75rem 2.5rem',
                     borderRadius: '12px',
-                    border: '1px solid #cbd5e1',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-surface)',
                     fontSize: '0.9rem',
                     outline: 'none',
-                    color: '#0f172a'
+                    color: 'var(--text-primary)'
                   }}
                 />
               </div>
