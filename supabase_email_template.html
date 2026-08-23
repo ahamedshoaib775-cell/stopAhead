@@ -1,0 +1,28 @@
+<!--
+  StopAhead Supabase Email Template (Magic Link / Email OTP)
+  
+  Copy and paste this HTML into:
+  Supabase Dashboard -> Authentication -> Email Templates -> Magic Link (or Confirm Signup)
+
+  This replaces {{ .ConfirmationURL }} with {{ .Token }} to send a 6-digit numeric OTP code.
+-->
+
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 40px 20px; background-color: #f8fafc; color: #0f172a;">
+  <div style="max-width: 440px; margin: 0 auto; background: #ffffff; padding: 32px; border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);">
+    
+    <div style="margin-bottom: 24px;">
+      <h1 style="color: #0f172a; font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.02em;">StopAhead</h1>
+      <p style="color: #64748b; font-size: 14px; margin: 4px 0 0 0;">Never Miss Your Stop</p>
+    </div>
+
+    <p style="color: #334155; font-size: 15px; font-weight: 600; margin-bottom: 12px;">Your verification code is:</p>
+    
+    <div style="background: rgba(2, 90, 237, 0.06); border: 2px dashed #025aed; border-radius: 14px; padding: 16px; margin: 16px 0 24px 0;">
+      <span style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #025aed; font-family: monospace;">{{ .Token }}</span>
+    </div>
+
+    <p style="color: #64748b; font-size: 13px; margin: 0; line-height: 1.5;">
+      This code expires in 60 minutes. If you didn't request this, you can safely ignore this email.
+    </p>
+  </div>
+</div>
