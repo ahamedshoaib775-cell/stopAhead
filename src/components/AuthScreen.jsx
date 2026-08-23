@@ -87,8 +87,9 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
       if (error) {
         console.warn('[StopAhead Magic Link Error]:', error);
         const msg = error.message || '';
-        if (msg.toLowerCase().includes('rate limit')) {
-          setErrorMessage('Too many requests. Please wait a minute before retrying.');
+        if (msg.toLowerCase().includes('rate limit') || error?.status === 429) {
+          setErrorMessage('Supabase security rate limit reached. Please wait 60 seconds before requesting another email link.');
+          setCooldown(60);
         } else {
           setErrorMessage(msg || 'Could not send sign-in link. Please check your email address.');
         }
@@ -96,7 +97,7 @@ export default function AuthScreen({ onAuthSuccess, onContinueAsGuest }) {
         console.log('[StopAhead Auth] Magic Link Sent Successfully!');
         setSuccessMessage(`Sign-in link sent to ${getMaskedEmail()}`);
         setStep(2);
-        setCooldown(45);
+        setCooldown(60);
       }
     } catch (err) {
       console.error('[StopAhead Auth Exception]:', err);
